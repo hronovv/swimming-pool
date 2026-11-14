@@ -9,7 +9,7 @@ import (
 )
 
 type UserService interface {
-	GetUser(ctx context.Context, ID int) (User, error)
+	GetByID(ctx context.Context, ID int) (User, error)
 }
 
 type Handler struct {
@@ -25,7 +25,7 @@ func NewHandler(service UserService) *Handler {
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	users := r.Group("/users")
 	{
-		users.GET("/:id", h.GetUser)
+		users.GET("/:id", h.GetByID)
 	}
 }
 
@@ -41,14 +41,14 @@ type UserResponse struct {
 	Email        *string `json:"email"`
 }
 
-func (h *Handler) GetUser(c *gin.Context) {
+func (h *Handler) GetByID(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.Status(http.StatusBadRequest)
 		return
 	}
 
-	user, err := h.service.GetUser(c.Request.Context(), id)
+	user, err := h.service.GetByID(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return

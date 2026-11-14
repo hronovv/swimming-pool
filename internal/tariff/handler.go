@@ -22,9 +22,9 @@ func NewHandler(service TariffService) *Handler {
 }
 
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
-	users := r.Group("/tariffs")
+	tariffs := r.Group("/tariffs")
 	{
-		users.GET("/", h.GetAll)
+		tariffs.GET("/", h.GetAll)
 	}
 }
 

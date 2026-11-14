@@ -6,6 +6,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"pool/internal/lane"
 	"pool/internal/postgres"
 	"pool/internal/server"
 	"pool/internal/tariff"
@@ -32,8 +33,17 @@ func main() {
 	tariffService := tariff.NewService(tariffRepository)
 	tariffHandler := tariff.NewHandler(tariffService)
 
+	laneRepository := lane.NewRepository(db)
+	laneService := lane.NewService(laneRepository)
+	laneHandler := lane.NewHandler(laneService)
+
 	port := ":8080"
-	srv := server.New(port, userHandler, tariffHandler)
+	srv := server.New(port,
+		userHandler,
+		tariffHandler,
+		laneHandler,
+	)
+
 	log.Printf("Starting server on %s", port)
 	if err := srv.Run(); err != nil {
 		log.Fatalf("Error running server %v", err)
