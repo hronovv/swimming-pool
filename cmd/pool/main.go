@@ -8,6 +8,7 @@ import (
 	"os"
 	"pool/internal/postgres"
 	"pool/internal/server"
+	"pool/internal/tariff"
 	"pool/internal/user"
 )
 
@@ -27,8 +28,12 @@ func main() {
 	userService := user.NewService(userRepository)
 	userHandler := user.NewHandler(userService)
 
+	tariffRepository := tariff.NewRepository(db)
+	tariffService := tariff.NewService(tariffRepository)
+	tariffHandler := tariff.NewHandler(tariffService)
+
 	port := ":8080"
-	srv := server.New(port, userHandler)
+	srv := server.New(port, userHandler, tariffHandler)
 	log.Printf("Starting server on %s", port)
 	if err := srv.Run(); err != nil {
 		log.Fatalf("Error running server %v", err)
