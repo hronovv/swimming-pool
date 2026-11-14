@@ -19,8 +19,9 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) GetByID(ctx context.Context, ID int) (User, error) {
 	sqlQuery := `
-		SELECT *
-		FROM users
+		SELECT
+		u.id, u.last_name, u.first_name, u.patronymic, u.role, u.status, u.registered_at, u.phone, u.email
+		FROM users u 
 		WHERE id = $1;
 	`
 

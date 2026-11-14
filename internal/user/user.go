@@ -4,8 +4,6 @@ import "time"
 
 type User struct {
 	ID           int       `db:"id"`
-	Login        string    `db:"login"`
-	PasswordHash string    `db:"password_hash"`
 	LastName     string    `db:"last_name"`
 	FirstName    string    `db:"first_name"`
 	Patronymic   *string   `db:"patronymic"`
