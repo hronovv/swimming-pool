@@ -2,6 +2,7 @@ package lane
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -56,4 +57,26 @@ func (r *Repository) GetByID(ctx context.Context, ID int) (Lane, error) {
 	}
 
 	return lane, nil
+}
+
+func (r *Repository) Create(ctx context.Context, lane Lane) (Lane, error) {
+	sqlQuery := `
+		INSERT INTO lanes (name, length_m, depth_m, status)
+		VALUES
+			($1, $2, $3, $4)
+		RETURNING id;
+	`
+	err := r.db.QueryRow(ctx, sqlQuery, lane.Name, lane.LengthM, lane.DepthM, lane.Status).Scan(&lane.ID)
+	if err != nil {
+		return Lane{}, fmt.Errorf("failed to create lane: %w", err)
+	}
+	return lane, err
+}
+
+func (r *Repository) Update(ctx context.Context, lane Lane) error {
+	return nil
+}
+
+func (r *Repository) UpdateStatus(ctx context.Context, id int, status string) error {
+	return nil
 }

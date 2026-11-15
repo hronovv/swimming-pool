@@ -11,6 +11,9 @@ import (
 type LaneService interface {
 	GetAll(ctx context.Context) ([]Lane, error)
 	GetByID(ctx context.Context, ID int) (Lane, error)
+	Create(ctx context.Context, lane Lane) (Lane, error)
+	Update(ctx context.Context, lane Lane) error
+	UpdateStatus(ctx context.Context, id int, status string) error
 }
 
 type Handler struct {
