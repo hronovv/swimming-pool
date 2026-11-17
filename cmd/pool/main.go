@@ -44,7 +44,7 @@ func main() {
 		laneHandler,
 	)
 
-	log.Printf("Starting server on %s", port)
+	log.Printf("Starting server on http://localhost%s", port)
 	if err := srv.Run(); err != nil {
 		log.Fatalf("Error running server %v", err)
 	}

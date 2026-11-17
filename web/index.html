@@ -1,24 +1,26 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Информационная система бассейна">
-  <title>Бассейн — Информационная система</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Информационная система бассейна" />
+  <title>Бассейн</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body>
-
-  <main>
-    <h1>Информационная система бассейна</h1>
-    <p>Основной контент</p>
-  </main>
-
-  <footer>
-    <p>&copy; 2026 Pool System</p>
-  </footer>
-
-  <!-- Исправленный путь к вашему app.js -->
+<body class="theme-light">
+  <div class="picker">
+    <span>Тема</span>
+    <button type="button" data-m="theme-light" class="on">светлая</button>
+    <button type="button" data-m="theme-dark">тёмная</button>
+    <span class="picker-gap">Роль</span>
+    <button type="button" data-r="guest">вход</button>
+    <button type="button" data-r="client">клиент</button>
+    <button type="button" data-r="trainer">тренер</button>
+    <button type="button" data-r="admin" class="on">админ</button>
+  </div>
+  <div id="app"></div>
   <script src="/static/app.js"></script>
 </body>
 </html>
