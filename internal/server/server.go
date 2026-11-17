@@ -18,6 +18,10 @@ type Server struct {
 func New(addr string, handlers ...RouteRegister) *Server {
 	engine := gin.Default()
 
+	engine.Static("/static", "./web")
+	
+	engine.StaticFile("/", "./web/index.html")
+
 	apiGroup := engine.Group("/api/v1")
 
 	for _, handler := range handlers {
