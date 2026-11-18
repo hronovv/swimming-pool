@@ -7,10 +7,12 @@ import (
 	"log"
 	"os"
 	"pool/internal/group"
+	"pool/internal/journal"
 	"pool/internal/lane"
 	"pool/internal/payment"
 	"pool/internal/postgres"
 	"pool/internal/server"
+	"pool/internal/service"
 	"pool/internal/tariff"
 	"pool/internal/user"
 )
@@ -47,6 +49,14 @@ func main() {
 	groupService := group.NewService(groupRepository)
 	groupHandler := group.NewHandler(groupService)
 
+	journalRepository := journal.NewRepository(db)
+	journalService := journal.NewService(journalRepository)
+	journalHandler := journal.NewHandler(journalService)
+
+	serviceRepository := service.NewRepository(db)
+	serviceService := service.NewService(serviceRepository)
+	serviceHandler := service.NewHandler(serviceService)
+
 	port := ":8080"
 	srv := server.New(port,
 		userHandler,
@@ -54,6 +64,8 @@ func main() {
 		laneHandler,
 		paymentHandler,
 		groupHandler,
+		journalHandler,
+		serviceHandler,
 	)
 
 	log.Printf("Starting server on http://localhost%s", port)
