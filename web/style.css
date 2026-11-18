@@ -103,6 +103,8 @@ h1::after, h2::after {
   margin-top: 10px;
 }
 .lead { font-size: 13px; margin: 0 0 24px; color: var(--muted); }
+.msg { margin: 0 0 16px; color: var(--mark); }
+.empty { color: var(--muted); }
 
 input, select {
   background: var(--paper);

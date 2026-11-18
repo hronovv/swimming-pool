@@ -81,6 +81,10 @@ func prepareSession(session Session) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
+	session.TrainerIDs, err = normalizeTrainers(session.TrainerIDs, session.WorkFormatID)
+	if err != nil {
+		return Session{}, err
+	}
 	if err := validateSession(session); err != nil {
 		return Session{}, err
 	}
@@ -143,6 +147,25 @@ func optionalID(id *int, field string) (*int, error) {
 		return nil, fmt.Errorf("%w: %s is invalid", ErrInvalid, field)
 	}
 	return id, nil
+}
+
+func normalizeTrainers(ids []int, workFormatID int) ([]int, error) {
+	if workFormatID == workFormatFreeSwim && len(ids) > 0 {
+		return nil, fmt.Errorf("%w: free swim session cannot have a trainer", ErrInvalid)
+	}
+	seen := make(map[int]struct{}, len(ids))
+	out := make([]int, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return nil, fmt.Errorf("%w: trainer_id is invalid", ErrInvalid)
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 func optionalTopic(topic *string) (*string, error) {

@@ -49,6 +49,7 @@ type SessionResponse struct {
 	EndTime      string  `json:"end_time"`
 	Topic        *string `json:"topic"`
 	WasHeld      bool    `json:"was_held"`
+	TrainerIDs   []int   `json:"trainer_ids"`
 }
 
 type SessionRequest struct {
@@ -60,6 +61,7 @@ type SessionRequest struct {
 	EndTime      string  `json:"end_time"`
 	Topic        *string `json:"topic"`
 	WasHeld      bool    `json:"was_held"`
+	TrainerIDs   []int   `json:"trainer_ids"`
 }
 
 type HeldRequest struct {
@@ -284,10 +286,15 @@ func toSession(c *gin.Context, req SessionRequest, id int) (Session, bool) {
 		EndTime:      endTime,
 		Topic:        req.Topic,
 		WasHeld:      req.WasHeld,
+		TrainerIDs:   req.TrainerIDs,
 	}, true
 }
 
 func toSessionResponse(item Session) SessionResponse {
+	trainers := item.TrainerIDs
+	if trainers == nil {
+		trainers = []int{}
+	}
 	return SessionResponse{
 		ID:           item.ID,
 		WorkFormatID: item.WorkFormatID,
@@ -298,6 +305,7 @@ func toSessionResponse(item Session) SessionResponse {
 		EndTime:      item.EndTime.Format("15:04"),
 		Topic:        item.Topic,
 		WasHeld:      item.WasHeld,
+		TrainerIDs:   trainers,
 	}
 }
 
@@ -313,6 +321,8 @@ func writeSessionError(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
 	case errors.Is(err, ErrLaneNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "lane not found"})
+	case errors.Is(err, ErrTrainerNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "trainer not found"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}

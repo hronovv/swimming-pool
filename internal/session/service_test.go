@@ -60,6 +60,16 @@ func TestCreateRejectsGroupForIndividual(t *testing.T) {
 	}
 }
 
+func TestCreateRejectsTrainerOnFreeSwim(t *testing.T) {
+	svc := NewService(&stubRepo{})
+	item := sampleSession(workFormatFreeSwim, nil)
+	item.TrainerIDs = []int{3}
+	_, err := svc.Create(context.Background(), item)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("got %v, want ErrInvalid", err)
+	}
+}
+
 func TestCreateRejectsEndTimeNotAfterStart(t *testing.T) {
 	svc := NewService(&stubRepo{})
 	item := sampleSession(workFormatFreeSwim, nil)

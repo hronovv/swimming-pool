@@ -9,15 +9,20 @@ import (
 	"time"
 
 	"pool/internal/auth"
+	"pool/internal/client"
+	"pool/internal/enrollment"
 	"pool/internal/group"
 	"pool/internal/journal"
 	"pool/internal/lane"
 	"pool/internal/payment"
+	"pool/internal/permit"
 	"pool/internal/postgres"
 	"pool/internal/server"
 	"pool/internal/service"
 	"pool/internal/session"
+	"pool/internal/standard"
 	"pool/internal/tariff"
+	"pool/internal/trainer"
 	"pool/internal/user"
 )
 
@@ -76,6 +81,26 @@ func main() {
 	sessionService := session.NewService(sessionRepository)
 	sessionHandler := session.NewHandler(sessionService)
 
+	clientRepository := client.NewRepository(db)
+	clientService := client.NewService(clientRepository)
+	clientHandler := client.NewHandler(clientService)
+
+	trainerRepository := trainer.NewRepository(db)
+	trainerService := trainer.NewService(trainerRepository)
+	trainerHandler := trainer.NewHandler(trainerService)
+
+	permitRepository := permit.NewRepository(db)
+	permitService := permit.NewService(permitRepository)
+	permitHandler := permit.NewHandler(permitService)
+
+	enrollmentRepository := enrollment.NewRepository(db)
+	enrollmentService := enrollment.NewService(enrollmentRepository)
+	enrollmentHandler := enrollment.NewHandler(enrollmentService)
+
+	standardRepository := standard.NewRepository(db)
+	standardService := standard.NewService(standardRepository)
+	standardHandler := standard.NewHandler(standardService)
+
 	port := ":8080"
 	srv := server.New(port,
 		auth.RequireUser(userService, issuer),
@@ -88,6 +113,11 @@ func main() {
 		journalHandler,
 		serviceHandler,
 		sessionHandler,
+		clientHandler,
+		trainerHandler,
+		permitHandler,
+		enrollmentHandler,
+		standardHandler,
 	)
 
 	log.Printf("Starting server on http://localhost%s", port)

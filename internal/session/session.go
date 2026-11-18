@@ -20,6 +20,7 @@ var (
 	ErrWorkFormatNotFound = errors.New("work format not found")
 	ErrGroupNotFound      = errors.New("group not found")
 	ErrLaneNotFound       = errors.New("lane not found")
+	ErrTrainerNotFound    = errors.New("trainer not found")
 	allowedWorkFormats    = map[int]struct{}{
 		workFormatFreeSwim:   {},
 		workFormatIndividual: {},
@@ -38,6 +39,7 @@ type Session struct {
 	EndTime      time.Time `db:"end_time"`
 	Topic        *string   `db:"topic"`
 	WasHeld      bool      `db:"was_held"`
+	TrainerIDs   []int     `db:"-"`
 }
 
 type Filter struct {

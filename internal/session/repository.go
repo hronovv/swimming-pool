@@ -57,6 +57,9 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Session, erro
 	if err != nil {
 		return nil, err
 	}
+	if err := r.attachTrainers(ctx, sessions); err != nil {
+		return nil, err
+	}
 
 	return sessions, nil
 }
@@ -81,10 +84,23 @@ func (r *Repository) GetByID(ctx context.Context, ID int) (Session, error) {
 		return Session{}, err
 	}
 
-	return item, nil
+	items := []Session{item}
+	if err := r.attachTrainers(ctx, items); err != nil {
+		return Session{}, err
+	}
+	return items[0], nil
 }
 
 func (r *Repository) Create(ctx context.Context, item Session) (Session, error) {
+	if err := r.ensurePermits(ctx, item); err != nil {
+		return Session{}, err
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return Session{}, err
+	}
+	defer tx.Rollback(ctx)
+
 	sqlQuery := `
 		INSERT INTO sessions (
 			work_format_id, group_id, lane_id, session_date,
@@ -94,7 +110,7 @@ func (r *Repository) Create(ctx context.Context, item Session) (Session, error) 
 			($1, $2, $3, $4, $5::time, $6::time, $7, $8)
 		RETURNING id;
 	`
-	err := r.db.QueryRow(
+	err = tx.QueryRow(
 		ctx,
 		sqlQuery,
 		item.WorkFormatID,
@@ -109,10 +125,25 @@ func (r *Repository) Create(ctx context.Context, item Session) (Session, error) 
 	if err != nil {
 		return Session{}, mapRepoErr(err, "failed to create session")
 	}
+	if err := insertTrainers(ctx, tx, item.ID, item.TrainerIDs); err != nil {
+		return Session{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Session{}, err
+	}
 	return item, nil
 }
 
 func (r *Repository) Update(ctx context.Context, item Session) error {
+	if err := r.ensurePermits(ctx, item); err != nil {
+		return err
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
 	sqlQuery := `
 		UPDATE sessions
 		SET
@@ -126,7 +157,6 @@ func (r *Repository) Update(ctx context.Context, item Session) error {
 			was_held = @was_held
 		WHERE id = @id
 	`
-
 	args := pgx.NamedArgs{
 		"id":             item.ID,
 		"work_format_id": item.WorkFormatID,
@@ -138,15 +168,20 @@ func (r *Repository) Update(ctx context.Context, item Session) error {
 		"topic":          item.Topic,
 		"was_held":       item.WasHeld,
 	}
-
-	tag, err := r.db.Exec(ctx, sqlQuery, args)
+	tag, err := tx.Exec(ctx, sqlQuery, args)
 	if err != nil {
 		return mapRepoErr(err, "update session")
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	if _, err := tx.Exec(ctx, `DELETE FROM session_trainers WHERE session_id = $1`, item.ID); err != nil {
+		return fmt.Errorf("clear session trainers: %w", err)
+	}
+	if err := insertTrainers(ctx, tx, item.ID, item.TrainerIDs); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) UpdateHeld(ctx context.Context, id int, wasHeld bool) error {
@@ -176,9 +211,79 @@ func mapRepoErr(err error, op string) error {
 			return ErrGroupNotFound
 		case "fk_sessions_lane":
 			return ErrLaneNotFound
+		case "fk_session_trainers_trainer":
+			return ErrTrainerNotFound
 		}
 	}
 	return fmt.Errorf("%s: %w", op, err)
+}
+
+func (r *Repository) ensurePermits(ctx context.Context, item Session) error {
+	for _, trainerID := range item.TrainerIDs {
+		var allowed bool
+		err := r.db.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM trainer_permits p
+				WHERE p.trainer_id = $1
+				  AND p.work_format_id = $2
+				  AND p.issued_on <= $3
+				  AND (p.expires_on IS NULL OR p.expires_on >= $3)
+			)
+		`, trainerID, item.WorkFormatID, item.SessionDate).Scan(&allowed)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return fmt.Errorf("%w: trainer %d has no permit for this format on the session date", ErrInvalid, trainerID)
+		}
+	}
+	return nil
+}
+
+func (r *Repository) attachTrainers(ctx context.Context, items []Session) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]int, len(items))
+	pos := make(map[int]int, len(items))
+	for i := range items {
+		ids[i] = items[i].ID
+		pos[items[i].ID] = i
+		items[i].TrainerIDs = []int{}
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT session_id, trainer_id
+		FROM session_trainers
+		WHERE session_id = ANY($1)
+		ORDER BY trainer_id
+	`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sessionID, trainerID int
+		if err := rows.Scan(&sessionID, &trainerID); err != nil {
+			return err
+		}
+		i := pos[sessionID]
+		items[i].TrainerIDs = append(items[i].TrainerIDs, trainerID)
+	}
+	return rows.Err()
+}
+
+func insertTrainers(ctx context.Context, tx pgx.Tx, sessionID int, ids []int) error {
+	for _, id := range ids {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO session_trainers (session_id, trainer_id)
+			VALUES ($1, $2)
+		`, sessionID, id)
+		if err != nil {
+			return mapRepoErr(err, "assign trainer")
+		}
+	}
+	return nil
 }
 
 func nullableTime(value time.Time) any {
