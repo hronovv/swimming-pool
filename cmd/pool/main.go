@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"pool/internal/lane"
+	"pool/internal/payment"
 	"pool/internal/postgres"
 	"pool/internal/server"
 	"pool/internal/tariff"
@@ -37,11 +38,16 @@ func main() {
 	laneService := lane.NewService(laneRepository)
 	laneHandler := lane.NewHandler(laneService)
 
+	paymentRepository := payment.NewRepository(db)
+	paymentService := payment.NewService(paymentRepository)
+	paymentHandler := payment.NewHandler(paymentService)
+
 	port := ":8080"
 	srv := server.New(port,
 		userHandler,
 		tariffHandler,
 		laneHandler,
+		paymentHandler,
 	)
 
 	log.Printf("Starting server on http://localhost%s", port)
