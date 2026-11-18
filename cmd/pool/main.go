@@ -6,6 +6,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"pool/internal/group"
 	"pool/internal/lane"
 	"pool/internal/payment"
 	"pool/internal/postgres"
@@ -42,12 +43,17 @@ func main() {
 	paymentService := payment.NewService(paymentRepository)
 	paymentHandler := payment.NewHandler(paymentService)
 
+	groupRepository := group.NewRepository(db)
+	groupService := group.NewService(groupRepository)
+	groupHandler := group.NewHandler(groupService)
+
 	port := ":8080"
 	srv := server.New(port,
 		userHandler,
 		tariffHandler,
 		laneHandler,
 		paymentHandler,
+		groupHandler,
 	)
 
 	log.Printf("Starting server on http://localhost%s", port)
