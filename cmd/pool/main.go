@@ -13,6 +13,7 @@ import (
 	"pool/internal/postgres"
 	"pool/internal/server"
 	"pool/internal/service"
+	"pool/internal/session"
 	"pool/internal/tariff"
 	"pool/internal/user"
 )
@@ -57,6 +58,10 @@ func main() {
 	serviceService := service.NewService(serviceRepository)
 	serviceHandler := service.NewHandler(serviceService)
 
+	sessionRepository := session.NewRepository(db)
+	sessionService := session.NewService(sessionRepository)
+	sessionHandler := session.NewHandler(sessionService)
+
 	port := ":8080"
 	srv := server.New(port,
 		userHandler,
@@ -66,6 +71,7 @@ func main() {
 		groupHandler,
 		journalHandler,
 		serviceHandler,
+		sessionHandler,
 	)
 
 	log.Printf("Starting server on http://localhost%s", port)
