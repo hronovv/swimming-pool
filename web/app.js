@@ -57,7 +57,10 @@ const ERRORS = {
 };
 
 let me = null;
+const PAGE_SIZE = 20;
+
 let page = "services";
+let tablePage = 1;
 let q = "";
 let form = null;
 let people = "accounts";
@@ -120,9 +123,25 @@ function myTrainer(data) {
   return data.trainers.find((item) => item.user_id === me.id) || null;
 }
 
-function tbl(heads, body) {
-  const html = body || `<tr><td class="empty" colspan="${heads.length}">Ничего не найдено</td></tr>`;
-  return `<div class="table-wrap"><table><thead><tr>${heads.map((head) => `<th>${head}</th>`).join("")}</tr></thead><tbody>${html}</tbody></table></div>`;
+function tbl(heads, rowHtml) {
+  const rows = Array.isArray(rowHtml) ? rowHtml : [];
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  if (tablePage > pages) tablePage = pages;
+  if (tablePage < 1) tablePage = 1;
+  const start = (tablePage - 1) * PAGE_SIZE;
+  const html = rows.slice(start, start + PAGE_SIZE).join("")
+    || `<tr><td class="empty" colspan="${heads.length}">Ничего не найдено</td></tr>`;
+  return `<div class="table-wrap"><table><thead><tr>${heads.map((head) => `<th>${head}</th>`).join("")}</tr></thead><tbody>${html}</tbody></table></div>${pager(rows.length, pages)}`;
+}
+function pager(total, pages) {
+  if (total <= PAGE_SIZE) return "";
+  const from = (tablePage - 1) * PAGE_SIZE + 1;
+  const to = Math.min(total, tablePage * PAGE_SIZE);
+  return `<div class="pager">
+    <button type="button" class="btn-line" data-page="prev" ${tablePage === 1 ? "disabled" : ""}>назад</button>
+    <span>${from}–${to} из ${total}</span>
+    <button type="button" class="btn-line" data-page="next" ${tablePage === pages ? "disabled" : ""}>дальше</button>
+  </div>`;
 }
 function formBtns() {
   return `<div class="wide"><button type="button" class="btn" data-act="save">Сохранить</button> <button type="button" class="btn-line" data-form="off">Отмена</button></div>`;
@@ -243,7 +262,7 @@ async function servicesPage() {
       <td>${tag(SERVICE_STATUS[row.status] || row.status, row.status === "frozen")}</td>
       <td>${esc(row.start_date)} — ${esc(row.end_date)}</td>
       ${me.role === "admin" ? `<td class="row-actions">${serviceActions(row)}</td>` : ""}
-    </tr>`).join(""))}`;
+    </tr>`))}`;
 }
 function serviceActions(row) {
   if (row.status === "closed") return "";
@@ -296,7 +315,7 @@ async function paymentsPage() {
           <td>${tag(PAY_STATUS[row.status] || row.status, row.status !== "completed")}</td>
           ${me.role === "admin" ? `<td class="row-actions">${paymentActions(row)}</td>` : ""}
         </tr>`;
-      }).join(""))}`;
+      }))}`;
 }
 function paymentActions(row) {
   if (row.status !== "pending") return "";
@@ -346,7 +365,7 @@ async function sessionsPage() {
         <td>${esc(row.trainer_ids.length ? row.trainer_ids.map((id) => trainerName(data, id)).join(", ") : "—")}</td>
         <td>${tag(row.was_held ? "проведено" : "запланировано")}</td>
         ${me.role === "admin" ? `<td class="row-actions"><a href="#" data-act="held" data-path="/sessions/${row.id}/held" data-held="${row.was_held ? "0" : "1"}">${row.was_held ? "снять" : "проведено"}</a></td>` : ""}
-      </tr>`).join(""))}`;
+      </tr>`))}`;
 }
 
 async function enrollmentsPage() {
@@ -392,7 +411,7 @@ async function enrollmentsPage() {
           <td>${esc(dash(row.comment))}</td>
           ${me.role !== "client" ? `<td class="row-actions"><a href="#" data-act="attend" data-path="/enrollments/${row.service_id}/${row.session_id}" data-attended="${row.attended ? "0" : "1"}">${row.attended ? "снять явку" : "отметить"}</a></td>` : ""}
         </tr>`;
-      }).join(""))}`;
+      }))}`;
 }
 function sessionLabel(session) {
   if (!session) return "—";
@@ -434,7 +453,7 @@ async function standardsPage() {
         <td>${esc(row.held_on)}</td><td class="money">${esc(dash(row.result_time))}</td>
         <td>${tag(OUTCOME[row.outcome] || row.outcome, row.outcome === "failed")}</td>
         <td>${row.attempt_no}</td>
-      </tr>`).join(""))}`;
+      </tr>`))}`;
 }
 
 async function usersPage() {
@@ -453,7 +472,7 @@ async function usersPage() {
         <td class="name">${esc(personName(data.userByID[row.user_id]))}</td>
         <td>${esc(row.passport)}</td><td>${esc(row.birth_date)}</td><td>${esc(dash(row.address))}</td>
         <td>${tag(row.medical_certificate ? "есть" : "нет", !row.medical_certificate)}</td>
-      </tr>`).join(""))}`;
+      </tr>`))}`;
   }
   if (people === "trainers") {
     const permits = await load("permits", "/permits/");
@@ -474,7 +493,7 @@ async function usersPage() {
         <td>${row.experience_years}</td>
         <td>${esc(SPEC[row.specialization] || row.specialization)}</td>
         <td>${esc(formats[row.id]?.join(", ") || "—")}</td>
-      </tr>`).join(""))}`;
+      </tr>`))}`;
   }
   const rows = data.users.filter((row) => hit([row.login, personName(row), row.role, row.phone, row.email, USER_STATUS[row.status]]));
   return `<h2>Пользователи</h2>
@@ -496,7 +515,7 @@ async function usersPage() {
       <td>${esc(dash(row.phone))}</td><td>${esc(dash(row.email))}</td>
       <td>${tag(USER_STATUS[row.status] || row.status, row.status === "blocked")}</td>
       <td class="row-actions">${statusLink(`/users/${row.id}/status`, row.status === "active" ? "blocked" : "active", "users", row.status === "active" ? "заблокировать" : "активировать")}</td>
-    </tr>`).join(""))}`;
+    </tr>`))}`;
 }
 
 async function tariffsPage() {
@@ -516,7 +535,7 @@ async function tariffsPage() {
     ${tbl(["id", "Название", "Формат", "Цена", "Визитов", "Дней"], rows.map((row) => `<tr>
       <td>${row.id}</td><td class="name">${esc(row.name)}</td><td>${esc(TARIFF_FORMAT[row.format] || row.format)}</td>
       <td class="money">${money(row.price)}</td><td>${dash(row.visit_limit)}</td><td>${row.duration_days}</td>
-    </tr>`).join(""))}`;
+    </tr>`))}`;
 }
 
 async function lanesPage() {
@@ -536,7 +555,7 @@ async function lanesPage() {
       <td>${Number(row.depth_m).toFixed(2)} м</td>
       <td>${tag(LANE_STATUS[row.status] || row.status, row.status === "closed")}</td>
       <td class="row-actions">${statusLink(`/lanes/${row.id}/status`, row.status === "available" ? "closed" : "available", "lanes", row.status === "available" ? "закрыть" : "открыть")}</td>
-    </tr>`).join(""))}`;
+    </tr>`))}`;
 }
 
 async function groupsPage() {
@@ -558,7 +577,7 @@ async function groupsPage() {
       <td class="money">${row.capacity}</td>
       <td>${esc(row.start_date)} — ${esc(row.end_date)}</td>
       ${me.role === "admin" ? `<td class="row-actions">${groupActions(row)}</td>` : ""}
-    </tr>`).join(""))}`;
+    </tr>`))}`;
 }
 function groupActions(row) {
   if (row.status === "recruiting") return statusLink(`/groups/${row.id}/status`, "training", "groups", "к тренировкам");
@@ -578,7 +597,7 @@ async function permitsPage() {
       <td class="name">${esc(trainerName(data, row.trainer_id))}</td>
       <td>${esc(WORK[row.work_format_id] || row.work_format_id)}</td>
       <td>${esc(row.issued_on)}</td><td>${esc(row.expires_on || "бессрочно")}</td>
-    </tr>`).join(""))}`;
+    </tr>`))}`;
 }
 
 async function journalPage() {
@@ -603,7 +622,7 @@ async function journalPage() {
       <td>${esc(row.occurred_at)}</td><td class="name">${esc(row.login)}</td><td>${esc(row.action)}</td>
       <td>${esc(row.object)}</td><td>${esc(row.description)}</td><td>${esc(row.ip_address)}</td>
       <td>${tag(RESULT[row.result] || row.result, row.result === "error")}</td>
-    </tr>`).join(""))}`;
+    </tr>`))}`;
 }
 
 function statusLink(path, status, bucket, label) {
@@ -806,6 +825,14 @@ document.querySelectorAll("[data-m]").forEach((button) => {
 });
 
 document.getElementById("app").addEventListener("click", async (event) => {
+  const step = event.target.closest("[data-page]");
+  if (step) {
+    event.preventDefault();
+    if (step.disabled) return;
+    tablePage += step.dataset.page === "next" ? 1 : -1;
+    render();
+    return;
+  }
   const nav = event.target.closest("a[data-p]");
   if (nav) {
     event.preventDefault();
@@ -813,6 +840,7 @@ document.getElementById("app").addEventListener("click", async (event) => {
     form = null;
     q = "";
     people = "accounts";
+    tablePage = 1;
     render();
     return;
   }
@@ -822,6 +850,7 @@ document.getElementById("app").addEventListener("click", async (event) => {
     people = sub.dataset.s;
     form = null;
     q = "";
+    tablePage = 1;
     render();
     return;
   }
@@ -876,6 +905,7 @@ document.getElementById("app").addEventListener("click", async (event) => {
 document.getElementById("app").addEventListener("input", (event) => {
   if (event.target.id !== "q") return;
   q = event.target.value;
+  tablePage = 1;
   focusSearch = true;
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => render(), page === "journal" ? 250 : 0);
@@ -884,6 +914,7 @@ document.getElementById("app").addEventListener("change", (event) => {
   if (event.target.name === "session_id") filterEnrollmentServices();
   if (!event.target.dataset.filter) return;
   filters[event.target.dataset.filter] = event.target.value;
+  tablePage = 1;
   drop("journal");
   render();
 });

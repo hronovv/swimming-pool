@@ -216,3 +216,12 @@ td.row-actions a:hover { color: var(--mark); }
   border-bottom-color: var(--mark);
   font-weight: 600;
 }
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.pager button[disabled] { opacity: 0.4; cursor: default; }
