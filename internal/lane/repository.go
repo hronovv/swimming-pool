@@ -74,9 +74,49 @@ func (r *Repository) Create(ctx context.Context, lane Lane) (Lane, error) {
 }
 
 func (r *Repository) Update(ctx context.Context, lane Lane) error {
+	sqlQuery := `
+		UPDATE lanes
+		SET
+			name = @name,
+			status = @status,
+			updated_at = NOW()
+		WHERE id = @id
+	`
+
+	args := pgx.NamedArgs{
+		"id":     lane.ID,
+		"name":   lane.Name,
+		"status": lane.Status,
+	}
+
+	tag, err := r.db.Exec(ctx, sqlQuery, args)
+
+	if err != nil {
+		return fmt.Errorf("update lane: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("record not found")
+	}
+
 	return nil
 }
 
 func (r *Repository) UpdateStatus(ctx context.Context, id int, status string) error {
+	sqlQuery := `
+		UPDATE lanes
+		SET status = $1
+		WHERE id = $2
+	`
+
+	tag, err := r.db.Exec(ctx, sqlQuery, status, id)
+	if err != nil {
+		return fmt.Errorf("update lane status: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("record not found")
+	}
+
 	return nil
 }
