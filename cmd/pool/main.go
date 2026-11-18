@@ -6,6 +6,9 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
+
+	"pool/internal/auth"
 	"pool/internal/group"
 	"pool/internal/journal"
 	"pool/internal/lane"
@@ -33,6 +36,17 @@ func main() {
 	userRepository := user.NewRepository(db)
 	userService := user.NewService(userRepository)
 	userHandler := user.NewHandler(userService)
+
+	issuer, err := auth.NewIssuer(
+		os.Getenv("JWT_SECRET"),
+		15*time.Minute,
+		7*24*time.Hour,
+		os.Getenv("COOKIE_SECURE") == "true",
+	)
+	if err != nil {
+		log.Fatalf("Error creating token issuer: %v", err)
+	}
+	authHandler := auth.NewHandler(userService, issuer)
 
 	tariffRepository := tariff.NewRepository(db)
 	tariffService := tariff.NewService(tariffRepository)
@@ -64,6 +78,8 @@ func main() {
 
 	port := ":8080"
 	srv := server.New(port,
+		auth.RequireUser(userService, issuer),
+		authHandler,
 		userHandler,
 		tariffHandler,
 		laneHandler,

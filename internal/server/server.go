@@ -15,14 +15,16 @@ type Server struct {
 	server *http.Server
 }
 
-func New(addr string, handlers ...RouteRegister) *Server {
+func New(addr string, guard gin.HandlerFunc, handlers ...RouteRegister) *Server {
 	engine := gin.Default()
 
 	engine.Static("/static", "./web")
-	
 	engine.StaticFile("/", "./web/index.html")
 
 	apiGroup := engine.Group("/api/v1")
+	if guard != nil {
+		apiGroup.Use(guard)
+	}
 
 	for _, handler := range handlers {
 		handler.RegisterRoutes(apiGroup)

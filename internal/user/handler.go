@@ -12,7 +12,6 @@ import (
 type UserService interface {
 	GetAll(ctx context.Context, filter Filter) ([]User, error)
 	GetByID(ctx context.Context, ID int) (User, error)
-	Authenticate(ctx context.Context, login, password string) (User, error)
 	Create(ctx context.Context, in NewUser) (User, error)
 	Update(ctx context.Context, id int, in UserUpdate) error
 	UpdateStatus(ctx context.Context, id int, status string) error
@@ -30,8 +29,6 @@ func NewHandler(service UserService) *Handler {
 }
 
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
-	r.POST("/login", h.Login)
-
 	users := r.Group("/users")
 	{
 		users.GET("/", h.GetAll)
@@ -72,11 +69,6 @@ type StatusRequest struct {
 }
 
 type PasswordRequest struct {
-	Password string `json:"password"`
-}
-
-type LoginRequest struct {
-	Login    string `json:"login"`
 	Password string `json:"password"`
 }
 
@@ -205,22 +197,6 @@ func (h *Handler) UpdatePassword(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
-}
-
-func (h *Handler) Login(c *gin.Context) {
-	var req LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Status(http.StatusBadRequest)
-		return
-	}
-
-	u, err := h.service.Authenticate(c.Request.Context(), req.Login, req.Password)
-	if err != nil {
-		writeUserError(c, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, toUserResponse(u))
 }
 
 func parseID(c *gin.Context) (int, bool) {
