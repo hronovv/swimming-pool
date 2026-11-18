@@ -1,5 +1,17 @@
 package lane
 
+import "errors"
+
+const (
+	StatusAvailable = "available"
+	StatusClosed    = "closed"
+)
+
+var (
+	ErrNotFound = errors.New("lane not found")
+	ErrInvalid  = errors.New("invalid lane")
+)
+
 type Lane struct {
 	ID      int     `db:"id"`
 	Name    string  `db:"name"`

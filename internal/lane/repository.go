@@ -2,6 +2,7 @@ package lane
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -22,7 +23,8 @@ func (r *Repository) GetAll(ctx context.Context) ([]Lane, error) {
 	sqlQuery := `
 		SELECT
 		l.id, l.name, l.length_m, l.depth_m, l.status
-		FROM lanes l;
+		FROM lanes l
+		ORDER BY l.id;
 	`
 
 	rows, err := r.db.Query(ctx, sqlQuery)
@@ -53,6 +55,9 @@ func (r *Repository) GetByID(ctx context.Context, ID int) (Lane, error) {
 
 	lane, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[Lane])
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Lane{}, ErrNotFound
+		}
 		return Lane{}, err
 	}
 
@@ -70,7 +75,7 @@ func (r *Repository) Create(ctx context.Context, lane Lane) (Lane, error) {
 	if err != nil {
 		return Lane{}, fmt.Errorf("failed to create lane: %w", err)
 	}
-	return lane, err
+	return lane, nil
 }
 
 func (r *Repository) Update(ctx context.Context, lane Lane) error {
@@ -78,25 +83,27 @@ func (r *Repository) Update(ctx context.Context, lane Lane) error {
 		UPDATE lanes
 		SET
 			name = @name,
-			status = @status,
-			updated_at = NOW()
+			length_m = @length_m,
+			depth_m = @depth_m,
+			status = @status
 		WHERE id = @id
 	`
 
 	args := pgx.NamedArgs{
-		"id":     lane.ID,
-		"name":   lane.Name,
-		"status": lane.Status,
+		"id":       lane.ID,
+		"name":     lane.Name,
+		"length_m": lane.LengthM,
+		"depth_m":  lane.DepthM,
+		"status":   lane.Status,
 	}
 
 	tag, err := r.db.Exec(ctx, sqlQuery, args)
-
 	if err != nil {
 		return fmt.Errorf("update lane: %w", err)
 	}
 
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("record not found")
+		return ErrNotFound
 	}
 
 	return nil
@@ -115,7 +122,7 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int, status string) er
 	}
 
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("record not found")
+		return ErrNotFound
 	}
 
 	return nil
