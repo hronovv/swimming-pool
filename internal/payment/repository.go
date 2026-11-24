@@ -14,6 +14,8 @@ type Repository struct {
 	db *pgxpool.Pool
 }
 
+const personNameSQL = `trim(u.last_name || ' ' || left(u.first_name, 1) || '.' || CASE WHEN coalesce(u.patronymic, '') = '' THEN '' ELSE ' ' || left(u.patronymic, 1) || '.' END)`
+
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{
 		db: db,
@@ -23,15 +25,20 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Payment, error) {
 	sqlQuery := `
 		SELECT
-		p.id, p.service_id, p.amount, p.paid_on, p.method, p.purpose, p.status
+		p.id, p.service_id, p.amount, p.paid_on, p.method, p.purpose, p.status,
+		s.client_id, ` + personNameSQL + ` AS client_name
 		FROM payments p
+		JOIN services s ON s.id = p.service_id
+		JOIN clients c ON c.id = s.client_id
+		JOIN users u ON u.id = c.user_id
 		WHERE ($1 = 0 OR p.service_id = $1)
 		  AND ($2 = '' OR p.status = $2)
 		  AND ($3 = '' OR p.method = $3)
+		  AND ($4 = 0 OR s.client_id = $4)
 		ORDER BY p.id;
 	`
 
-	rows, err := r.db.Query(ctx, sqlQuery, filter.ServiceID, filter.Status, filter.Method)
+	rows, err := r.db.Query(ctx, sqlQuery, filter.ServiceID, filter.Status, filter.Method, filter.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -44,11 +51,27 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Payment, erro
 	return payments, nil
 }
 
+func (r *Repository) ClientIDByUser(ctx context.Context, userID int) (int, error) {
+	var id int
+	err := r.db.QueryRow(ctx, `SELECT id FROM clients WHERE user_id = $1`, userID).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return id, nil
+}
+
 func (r *Repository) GetByID(ctx context.Context, ID int) (Payment, error) {
 	sqlQuery := `
 		SELECT
-		p.id, p.service_id, p.amount, p.paid_on, p.method, p.purpose, p.status
+		p.id, p.service_id, p.amount, p.paid_on, p.method, p.purpose, p.status,
+		s.client_id, ` + personNameSQL + ` AS client_name
 		FROM payments p
+		JOIN services s ON s.id = p.service_id
+		JOIN clients c ON c.id = s.client_id
+		JOIN users u ON u.id = c.user_id
 		WHERE p.id = $1;
 	`
 

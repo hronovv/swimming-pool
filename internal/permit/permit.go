@@ -6,8 +6,10 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("permit not found")
-	ErrInvalid  = errors.New("invalid permit")
+	ErrNotFound        = errors.New("permit not found")
+	ErrInvalid         = errors.New("invalid permit")
+	ErrConflict        = errors.New("permit already exists")
+	ErrTrainerNotFound = errors.New("trainer not found")
 )
 
 type Permit struct {

@@ -11,6 +11,7 @@ type StandardRepository interface {
 	GetAll(ctx context.Context, filter Filter) ([]Standard, error)
 	GetByID(ctx context.Context, ID int) (Standard, error)
 	Create(ctx context.Context, item Standard) (Standard, error)
+	ClientIDByUser(ctx context.Context, userID int) (int, error)
 }
 
 type Service struct {
@@ -19,6 +20,13 @@ type Service struct {
 
 func NewService(repo StandardRepository) *Service {
 	return &Service{repo: repo}
+}
+
+func (s *Service) ClientIDByUser(ctx context.Context, userID int) (int, error) {
+	if userID <= 0 {
+		return 0, fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.ClientIDByUser(ctx, userID)
 }
 
 func (s *Service) GetAll(ctx context.Context, filter Filter) ([]Standard, error) {

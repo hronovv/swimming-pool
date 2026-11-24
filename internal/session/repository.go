@@ -13,7 +13,8 @@ import (
 
 const sessionColumns = `
 	s.id, s.work_format_id, s.group_id, s.lane_id, s.session_date,
-	s.start_time, s.end_time, s.topic, s.was_held
+	s.start_time, s.end_time, s.topic, s.was_held,
+	g.name AS group_name, l.name AS lane_name
 `
 
 type Repository struct {
@@ -30,6 +31,8 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Session, erro
 	sqlQuery := `
 		SELECT` + sessionColumns + `
 		FROM sessions s
+		LEFT JOIN training_groups g ON g.id = s.group_id
+		LEFT JOIN lanes l ON l.id = s.lane_id
 		WHERE ($1 = 0 OR s.work_format_id = $1)
 		  AND ($2 = 0 OR s.group_id = $2)
 		  AND ($3 = 0 OR s.lane_id = $3)
@@ -68,6 +71,8 @@ func (r *Repository) GetByID(ctx context.Context, ID int) (Session, error) {
 	sqlQuery := `
 		SELECT` + sessionColumns + `
 		FROM sessions s
+		LEFT JOIN training_groups g ON g.id = s.group_id
+		LEFT JOIN lanes l ON l.id = s.lane_id
 		WHERE s.id = $1;
 	`
 
@@ -251,12 +256,16 @@ func (r *Repository) attachTrainers(ctx context.Context, items []Session) error 
 		ids[i] = items[i].ID
 		pos[items[i].ID] = i
 		items[i].TrainerIDs = []int{}
+		items[i].TrainerNames = []string{}
 	}
 	rows, err := r.db.Query(ctx, `
-		SELECT session_id, trainer_id
-		FROM session_trainers
-		WHERE session_id = ANY($1)
-		ORDER BY trainer_id
+		SELECT st.session_id, st.trainer_id,
+			trim(u.last_name || ' ' || left(u.first_name, 1) || '.' || CASE WHEN coalesce(u.patronymic, '') = '' THEN '' ELSE ' ' || left(u.patronymic, 1) || '.' END)
+		FROM session_trainers st
+		JOIN trainers t ON t.id = st.trainer_id
+		JOIN users u ON u.id = t.user_id
+		WHERE st.session_id = ANY($1)
+		ORDER BY st.trainer_id
 	`, ids)
 	if err != nil {
 		return err
@@ -264,11 +273,13 @@ func (r *Repository) attachTrainers(ctx context.Context, items []Session) error 
 	defer rows.Close()
 	for rows.Next() {
 		var sessionID, trainerID int
-		if err := rows.Scan(&sessionID, &trainerID); err != nil {
+		var name string
+		if err := rows.Scan(&sessionID, &trainerID, &name); err != nil {
 			return err
 		}
 		i := pos[sessionID]
 		items[i].TrainerIDs = append(items[i].TrainerIDs, trainerID)
+		items[i].TrainerNames = append(items[i].TrainerNames, name)
 	}
 	return rows.Err()
 }

@@ -13,6 +13,7 @@ func (s *stubRepo) GetAll(context.Context, Filter) ([]Standard, error) { return 
 func (s *stubRepo) GetByID(context.Context, int) (Standard, error) {
 	return Standard{}, ErrNotFound
 }
+func (s *stubRepo) ClientIDByUser(context.Context, int) (int, error) { return 0, nil }
 func (s *stubRepo) Create(_ context.Context, item Standard) (Standard, error) {
 	item.ID = 4
 	return item, nil

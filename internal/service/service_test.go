@@ -11,6 +11,7 @@ type stubRepo struct {
 	created   Model
 	tariff    TariffInfo
 	tariffErr error
+	noMedical bool
 }
 
 func (s *stubRepo) GetAll(context.Context, Filter) ([]Model, error) { return nil, nil }
@@ -27,6 +28,10 @@ func (s *stubRepo) UpdateStatus(context.Context, int, string) error { return nil
 func (s *stubRepo) TariffInfo(context.Context, int) (TariffInfo, error) {
 	return s.tariff, s.tariffErr
 }
+func (s *stubRepo) MedicalCertificate(context.Context, int) (bool, error) {
+	return !s.noMedical, nil
+}
+func (s *stubRepo) ClientIDByUser(context.Context, int) (int, error) { return 0, nil }
 
 func TestCreateFillsEndDateAndDefaultsStatus(t *testing.T) {
 	repo := &stubRepo{tariff: TariffInfo{Format: "free_swim_one_time", WorkFormatID: workFormatFreeSwim, DurationDays: 1}}
@@ -47,6 +52,21 @@ func TestCreateFillsEndDateAndDefaultsStatus(t *testing.T) {
 	wantEnd := start.AddDate(0, 0, 1)
 	if !repo.created.EndDate.Equal(wantEnd) {
 		t.Fatalf("end_date=%v, want %v", repo.created.EndDate, wantEnd)
+	}
+}
+
+func TestCreateRequiresMedicalCertificate(t *testing.T) {
+	svc := NewService(&stubRepo{
+		tariff:    TariffInfo{Format: "free_swim_one_time", WorkFormatID: workFormatFreeSwim, DurationDays: 1},
+		noMedical: true,
+	})
+	_, err := svc.Create(context.Background(), Model{
+		ClientID:  1,
+		TariffID:  1,
+		StartDate: time.Date(2025, 11, 17, 0, 0, 0, 0, time.UTC),
+	})
+	if err == nil || !errors.Is(err, ErrInvalid) {
+		t.Fatalf("got %v, want medical certificate error", err)
 	}
 }
 

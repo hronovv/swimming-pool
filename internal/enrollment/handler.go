@@ -7,6 +7,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"pool/internal/auth"
+	"pool/internal/user"
 )
 
 type EnrollmentService interface {
@@ -33,10 +35,12 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 }
 
 type EnrollmentResponse struct {
-	ServiceID int     `json:"service_id"`
-	SessionID int     `json:"session_id"`
-	Attended  bool    `json:"attended"`
-	Comment   *string `json:"comment"`
+	ServiceID  int     `json:"service_id"`
+	SessionID  int     `json:"session_id"`
+	Attended   bool    `json:"attended"`
+	Comment    *string `json:"comment"`
+	ClientName string  `json:"client_name"`
+	TariffName string  `json:"tariff_name"`
 }
 
 type EnrollmentRequest struct {
@@ -58,6 +62,9 @@ func (h *Handler) GetAll(c *gin.Context) {
 	}
 	if filter.SessionID, ok = queryID(c, "session_id"); !ok {
 		return
+	}
+	if actor, ok := auth.CurrentUser(c); ok && actor.Role == user.RoleClient {
+		filter.ClientUserID = actor.ID
 	}
 	items, err := h.service.GetAll(c.Request.Context(), filter)
 	if err != nil {
@@ -81,12 +88,16 @@ func (h *Handler) Create(c *gin.Context) {
 	if req.Comment != "" {
 		comment = &req.Comment
 	}
-	created, err := h.service.Create(c.Request.Context(), Enrollment{
+	item := Enrollment{
 		ServiceID: req.ServiceID,
 		SessionID: req.SessionID,
 		Attended:  req.Attended,
 		Comment:   comment,
-	})
+	}
+	if actor, ok := auth.CurrentUser(c); ok && actor.Role == user.RoleClient {
+		item.ActorUserID = actor.ID
+	}
+	created, err := h.service.Create(c.Request.Context(), item)
 	if err != nil {
 		writeEnrollmentError(c, err)
 		return
@@ -139,10 +150,12 @@ func queryID(c *gin.Context, name string) (int, bool) {
 
 func toEnrollmentResponse(item Enrollment) EnrollmentResponse {
 	return EnrollmentResponse{
-		ServiceID: item.ServiceID,
-		SessionID: item.SessionID,
-		Attended:  item.Attended,
-		Comment:   item.Comment,
+		ServiceID:  item.ServiceID,
+		SessionID:  item.SessionID,
+		Attended:   item.Attended,
+		Comment:    item.Comment,
+		ClientName: item.ClientName,
+		TariffName: item.TariffName,
 	}
 }
 

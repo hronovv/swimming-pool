@@ -39,7 +39,10 @@ type Session struct {
 	EndTime      time.Time `db:"end_time"`
 	Topic        *string   `db:"topic"`
 	WasHeld      bool      `db:"was_held"`
+	GroupName    *string   `db:"group_name"`
+	LaneName     *string   `db:"lane_name"`
 	TrainerIDs   []int     `db:"-"`
+	TrainerNames []string  `db:"-"`
 }
 
 type Filter struct {

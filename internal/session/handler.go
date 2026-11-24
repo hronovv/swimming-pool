@@ -40,16 +40,19 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 }
 
 type SessionResponse struct {
-	ID           int     `json:"id"`
-	WorkFormatID int     `json:"work_format_id"`
-	GroupID      *int    `json:"group_id"`
-	LaneID       *int    `json:"lane_id"`
-	SessionDate  string  `json:"session_date"`
-	StartTime    string  `json:"start_time"`
-	EndTime      string  `json:"end_time"`
-	Topic        *string `json:"topic"`
-	WasHeld      bool    `json:"was_held"`
-	TrainerIDs   []int   `json:"trainer_ids"`
+	ID           int      `json:"id"`
+	WorkFormatID int      `json:"work_format_id"`
+	GroupID      *int     `json:"group_id"`
+	LaneID       *int     `json:"lane_id"`
+	SessionDate  string   `json:"session_date"`
+	StartTime    string   `json:"start_time"`
+	EndTime      string   `json:"end_time"`
+	Topic        *string  `json:"topic"`
+	WasHeld      bool     `json:"was_held"`
+	TrainerIDs   []int    `json:"trainer_ids"`
+	GroupName    *string  `json:"group_name"`
+	LaneName     *string  `json:"lane_name"`
+	TrainerNames []string `json:"trainer_names"`
 }
 
 type SessionRequest struct {
@@ -60,7 +63,7 @@ type SessionRequest struct {
 	StartTime    string  `json:"start_time"`
 	EndTime      string  `json:"end_time"`
 	Topic        *string `json:"topic"`
-	WasHeld      bool    `json:"was_held"`
+	WasHeld      *bool   `json:"was_held"`
 	TrainerIDs   []int   `json:"trainer_ids"`
 }
 
@@ -276,6 +279,10 @@ func toSession(c *gin.Context, req SessionRequest, id int) (Session, bool) {
 	if !ok {
 		return Session{}, false
 	}
+	wasHeld := true
+	if req.WasHeld != nil {
+		wasHeld = *req.WasHeld
+	}
 	return Session{
 		ID:           id,
 		WorkFormatID: req.WorkFormatID,
@@ -285,7 +292,7 @@ func toSession(c *gin.Context, req SessionRequest, id int) (Session, bool) {
 		StartTime:    startTime,
 		EndTime:      endTime,
 		Topic:        req.Topic,
-		WasHeld:      req.WasHeld,
+		WasHeld:      wasHeld,
 		TrainerIDs:   req.TrainerIDs,
 	}, true
 }
@@ -294,6 +301,10 @@ func toSessionResponse(item Session) SessionResponse {
 	trainers := item.TrainerIDs
 	if trainers == nil {
 		trainers = []int{}
+	}
+	names := item.TrainerNames
+	if names == nil {
+		names = []string{}
 	}
 	return SessionResponse{
 		ID:           item.ID,
@@ -306,6 +317,9 @@ func toSessionResponse(item Session) SessionResponse {
 		Topic:        item.Topic,
 		WasHeld:      item.WasHeld,
 		TrainerIDs:   trainers,
+		GroupName:    item.GroupName,
+		LaneName:     item.LaneName,
+		TrainerNames: names,
 	}
 }
 

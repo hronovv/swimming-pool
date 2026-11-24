@@ -43,6 +43,8 @@ type userResponse struct {
 	RegisteredAt string  `json:"registered_at"`
 	Phone        *string `json:"phone"`
 	Email        *string `json:"email"`
+	ClientID     *int    `json:"client_id,omitempty"`
+	TrainerID    *int    `json:"trainer_id,omitempty"`
 }
 
 func (h *Handler) Login(c *gin.Context) {
@@ -62,7 +64,8 @@ func (h *Handler) Login(c *gin.Context) {
 		writeAuthError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toUserResponse(u))
+	SetCurrentUser(c, u)
+	h.writeUser(c, http.StatusOK, u)
 }
 
 func (h *Handler) Refresh(c *gin.Context) {
@@ -93,7 +96,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 		writeAuthError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toUserResponse(u))
+	h.writeUser(c, http.StatusOK, u)
 }
 
 func (h *Handler) Logout(c *gin.Context) {
@@ -107,7 +110,23 @@ func (h *Handler) Me(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-	c.JSON(http.StatusOK, toUserResponse(u))
+	h.writeUser(c, http.StatusOK, u)
+}
+
+func (h *Handler) writeUser(c *gin.Context, status int, u user.User) {
+	clientID, trainerID, err := h.users.Card(c.Request.Context(), u.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+	resp := toUserResponse(u)
+	if clientID > 0 {
+		resp.ClientID = &clientID
+	}
+	if trainerID > 0 {
+		resp.TrainerID = &trainerID
+	}
+	c.JSON(status, resp)
 }
 
 func (h *Handler) issueCookies(c *gin.Context, u user.User) error {

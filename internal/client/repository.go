@@ -9,7 +9,8 @@ import (
 )
 
 const clientColumns = `
-	c.id, c.user_id, c.passport, c.birth_date, c.address, c.medical_certificate
+	c.id, c.user_id, c.passport, c.birth_date, c.address, c.medical_certificate,
+	trim(u.last_name || ' ' || left(u.first_name, 1) || '.' || CASE WHEN coalesce(u.patronymic, '') = '' THEN '' ELSE ' ' || left(u.patronymic, 1) || '.' END) AS name
 `
 
 type Repository struct {
@@ -24,6 +25,7 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Client, error
 	sqlQuery := `
 		SELECT` + clientColumns + `
 		FROM clients c
+		JOIN users u ON u.id = c.user_id
 		WHERE ($1 = 0 OR c.user_id = $1)
 		ORDER BY c.id;
 	`
@@ -38,6 +40,7 @@ func (r *Repository) GetByID(ctx context.Context, ID int) (Client, error) {
 	sqlQuery := `
 		SELECT` + clientColumns + `
 		FROM clients c
+		JOIN users u ON u.id = c.user_id
 		WHERE c.id = $1;
 	`
 	rows, err := r.db.Query(ctx, sqlQuery, ID)
@@ -52,4 +55,15 @@ func (r *Repository) GetByID(ctx context.Context, ID int) (Client, error) {
 		return Client{}, err
 	}
 	return item, nil
+}
+
+func (r *Repository) UpdateMedical(ctx context.Context, id int, allowed bool) error {
+	tag, err := r.db.Exec(ctx, `UPDATE clients SET medical_certificate = $1 WHERE id = $2`, allowed, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

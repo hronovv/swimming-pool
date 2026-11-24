@@ -13,12 +13,16 @@ import (
 
 const standardColumns = `
 	s.id, s.client_id, s.trainer_id, s.style, s.distance_m, s.held_on,
-	s.result_time, s.outcome, s.attempt_no, s.comment
+	s.result_time, s.outcome, s.attempt_no, s.comment,
+	` + personNameSQL + ` AS client_name,
+	trim(tu.last_name || ' ' || left(tu.first_name, 1) || '.' || CASE WHEN coalesce(tu.patronymic, '') = '' THEN '' ELSE ' ' || left(tu.patronymic, 1) || '.' END) AS trainer_name
 `
 
 type Repository struct {
 	db *pgxpool.Pool
 }
+
+const personNameSQL = `trim(u.last_name || ' ' || left(u.first_name, 1) || '.' || CASE WHEN coalesce(u.patronymic, '') = '' THEN '' ELSE ' ' || left(u.patronymic, 1) || '.' END)`
 
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
@@ -28,6 +32,10 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Standard, err
 	sqlQuery := `
 		SELECT` + standardColumns + `
 		FROM standards s
+		JOIN clients c ON c.id = s.client_id
+		JOIN users u ON u.id = c.user_id
+		JOIN trainers t ON t.id = s.trainer_id
+		JOIN users tu ON tu.id = t.user_id
 		WHERE ($1 = 0 OR s.client_id = $1)
 		  AND ($2 = 0 OR s.trainer_id = $2)
 		ORDER BY s.held_on DESC, s.id DESC;
@@ -39,10 +47,26 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Standard, err
 	return pgx.CollectRows(rows, pgx.RowToStructByName[Standard])
 }
 
+func (r *Repository) ClientIDByUser(ctx context.Context, userID int) (int, error) {
+	var id int
+	err := r.db.QueryRow(ctx, `SELECT id FROM clients WHERE user_id = $1`, userID).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return id, nil
+}
+
 func (r *Repository) GetByID(ctx context.Context, ID int) (Standard, error) {
 	sqlQuery := `
 		SELECT` + standardColumns + `
 		FROM standards s
+		JOIN clients c ON c.id = s.client_id
+		JOIN users u ON u.id = c.user_id
+		JOIN trainers t ON t.id = s.trainer_id
+		JOIN users tu ON tu.id = t.user_id
 		WHERE s.id = $1;
 	`
 	rows, err := r.db.Query(ctx, sqlQuery, ID)

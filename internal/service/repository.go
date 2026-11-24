@@ -23,8 +23,13 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Model, error) {
 	sqlQuery := `
 		SELECT
-		s.id, s.client_id, s.tariff_id, s.group_id, s.start_date, s.end_date, s.status
+		s.id, s.client_id, s.tariff_id, s.group_id, s.start_date, s.end_date, s.status,
+		` + personNameSQL + ` AS client_name, t.name AS tariff_name, t.work_format_id, g.name AS group_name
 		FROM services s
+		JOIN clients c ON c.id = s.client_id
+		JOIN users u ON u.id = c.user_id
+		JOIN tariffs t ON t.id = s.tariff_id
+		LEFT JOIN training_groups g ON g.id = s.group_id
 		WHERE ($1 = 0 OR s.client_id = $1)
 		  AND ($2 = 0 OR s.tariff_id = $2)
 		  AND ($3 = 0 OR s.group_id = $3)
@@ -48,8 +53,13 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Model, error)
 func (r *Repository) GetByID(ctx context.Context, ID int) (Model, error) {
 	sqlQuery := `
 		SELECT
-		s.id, s.client_id, s.tariff_id, s.group_id, s.start_date, s.end_date, s.status
+		s.id, s.client_id, s.tariff_id, s.group_id, s.start_date, s.end_date, s.status,
+		` + personNameSQL + ` AS client_name, t.name AS tariff_name, t.work_format_id, g.name AS group_name
 		FROM services s
+		JOIN clients c ON c.id = s.client_id
+		JOIN users u ON u.id = c.user_id
+		JOIN tariffs t ON t.id = s.tariff_id
+		LEFT JOIN training_groups g ON g.id = s.group_id
 		WHERE s.id = $1;
 	`
 
@@ -140,6 +150,32 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int, status string) er
 		return ErrNotFound
 	}
 	return nil
+}
+
+const personNameSQL = `trim(u.last_name || ' ' || left(u.first_name, 1) || '.' || CASE WHEN coalesce(u.patronymic, '') = '' THEN '' ELSE ' ' || left(u.patronymic, 1) || '.' END)`
+
+func (r *Repository) MedicalCertificate(ctx context.Context, clientID int) (bool, error) {
+	var allowed bool
+	err := r.db.QueryRow(ctx, `SELECT medical_certificate FROM clients WHERE id = $1`, clientID).Scan(&allowed)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, ErrClientNotFound
+		}
+		return false, err
+	}
+	return allowed, nil
+}
+
+func (r *Repository) ClientIDByUser(ctx context.Context, userID int) (int, error) {
+	var id int
+	err := r.db.QueryRow(ctx, `SELECT id FROM clients WHERE user_id = $1`, userID).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return id, nil
 }
 
 func (r *Repository) TariffInfo(ctx context.Context, tariffID int) (TariffInfo, error) {

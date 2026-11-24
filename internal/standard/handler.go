@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"pool/internal/auth"
+	"pool/internal/user"
 )
 
 type StandardService interface {
 	GetAll(ctx context.Context, filter Filter) ([]Standard, error)
 	GetByID(ctx context.Context, ID int) (Standard, error)
+	ClientIDByUser(ctx context.Context, userID int) (int, error)
 	Create(ctx context.Context, item Standard) (Standard, error)
 }
 
@@ -34,16 +37,18 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 }
 
 type StandardResponse struct {
-	ID         int     `json:"id"`
-	ClientID   int     `json:"client_id"`
-	TrainerID  int     `json:"trainer_id"`
-	Style      string  `json:"style"`
-	DistanceM  int     `json:"distance_m"`
-	HeldOn     string  `json:"held_on"`
-	ResultTime *string `json:"result_time"`
-	Outcome    string  `json:"outcome"`
-	AttemptNo  int     `json:"attempt_no"`
-	Comment    *string `json:"comment"`
+	ID          int     `json:"id"`
+	ClientID    int     `json:"client_id"`
+	TrainerID   int     `json:"trainer_id"`
+	Style       string  `json:"style"`
+	DistanceM   int     `json:"distance_m"`
+	HeldOn      string  `json:"held_on"`
+	ResultTime  *string `json:"result_time"`
+	Outcome     string  `json:"outcome"`
+	AttemptNo   int     `json:"attempt_no"`
+	Comment     *string `json:"comment"`
+	ClientName  string  `json:"client_name"`
+	TrainerName string  `json:"trainer_name"`
 }
 
 type StandardRequest struct {
@@ -67,6 +72,18 @@ func (h *Handler) GetAll(c *gin.Context) {
 	if filter.TrainerID, ok = queryID(c, "trainer_id"); !ok {
 		return
 	}
+	if actor, found := auth.CurrentUser(c); found && actor.Role == user.RoleClient {
+		clientID, err := h.service.ClientIDByUser(c.Request.Context(), actor.ID)
+		if err != nil {
+			writeStandardError(c, err)
+			return
+		}
+		if clientID == 0 {
+			c.JSON(http.StatusOK, []StandardResponse{})
+			return
+		}
+		filter.ClientID = clientID
+	}
 	items, err := h.service.GetAll(c.Request.Context(), filter)
 	if err != nil {
 		writeStandardError(c, err)
@@ -88,6 +105,17 @@ func (h *Handler) GetByID(c *gin.Context) {
 	if err != nil {
 		writeStandardError(c, err)
 		return
+	}
+	if actor, found := auth.CurrentUser(c); found && actor.Role == user.RoleClient {
+		clientID, err := h.service.ClientIDByUser(c.Request.Context(), actor.ID)
+		if err != nil {
+			writeStandardError(c, err)
+			return
+		}
+		if clientID != item.ClientID {
+			c.JSON(http.StatusNotFound, gin.H{"error": "standard not found"})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, toStandardResponse(item))
 }
@@ -179,15 +207,17 @@ func parseClock(c *gin.Context, raw string) (*time.Time, bool) {
 
 func toStandardResponse(item Standard) StandardResponse {
 	resp := StandardResponse{
-		ID:        item.ID,
-		ClientID:  item.ClientID,
-		TrainerID: item.TrainerID,
-		Style:     item.Style,
-		DistanceM: item.DistanceM,
-		HeldOn:    item.HeldOn.Format("02.01.2006"),
-		Outcome:   item.Outcome,
-		AttemptNo: item.AttemptNo,
-		Comment:   item.Comment,
+		ID:          item.ID,
+		ClientID:    item.ClientID,
+		TrainerID:   item.TrainerID,
+		Style:       item.Style,
+		DistanceM:   item.DistanceM,
+		HeldOn:      item.HeldOn.Format("02.01.2006"),
+		Outcome:     item.Outcome,
+		AttemptNo:   item.AttemptNo,
+		Comment:     item.Comment,
+		ClientName:  item.ClientName,
+		TrainerName: item.TrainerName,
 	}
 	if item.ResultTime != nil {
 		value := item.ResultTime.Format("15:04:05")

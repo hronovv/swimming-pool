@@ -28,13 +28,17 @@ var (
 )
 
 type Model struct {
-	ID        int       `db:"id"`
-	ClientID  int       `db:"client_id"`
-	TariffID  int       `db:"tariff_id"`
-	GroupID   *int      `db:"group_id"`
-	StartDate time.Time `db:"start_date"`
-	EndDate   time.Time `db:"end_date"`
-	Status    string    `db:"status"`
+	ID           int       `db:"id"`
+	ClientID     int       `db:"client_id"`
+	TariffID     int       `db:"tariff_id"`
+	GroupID      *int      `db:"group_id"`
+	StartDate    time.Time `db:"start_date"`
+	EndDate      time.Time `db:"end_date"`
+	Status       string    `db:"status"`
+	ClientName   string    `db:"client_name"`
+	TariffName   string    `db:"tariff_name"`
+	WorkFormatID int       `db:"work_format_id"`
+	GroupName    *string   `db:"group_name"`
 }
 
 type Filter struct {

@@ -7,11 +7,14 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"pool/internal/auth"
+	"pool/internal/user"
 )
 
 type ClientService interface {
 	GetAll(ctx context.Context, filter Filter) ([]Client, error)
 	GetByID(ctx context.Context, ID int) (Client, error)
+	UpdateMedical(ctx context.Context, id int, allowed bool) error
 }
 
 type Handler struct {
@@ -27,6 +30,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	{
 		clients.GET("/", h.GetAll)
 		clients.GET("/:id", h.GetByID)
+		clients.PATCH("/:id/medical", h.UpdateMedical)
 	}
 }
 
@@ -37,6 +41,11 @@ type ClientResponse struct {
 	BirthDate          string  `json:"birth_date"`
 	Address            *string `json:"address"`
 	MedicalCertificate bool    `json:"medical_certificate"`
+	Name               string  `json:"name"`
+}
+
+type MedicalRequest struct {
+	MedicalCertificate *bool `json:"medical_certificate"`
 }
 
 func (h *Handler) GetAll(c *gin.Context) {
@@ -51,7 +60,7 @@ func (h *Handler) GetAll(c *gin.Context) {
 	}
 	resp := make([]ClientResponse, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, toClientResponse(item))
+		resp = append(resp, h.visible(c, item))
 	}
 	c.JSON(http.StatusOK, resp)
 }
@@ -66,7 +75,24 @@ func (h *Handler) GetByID(c *gin.Context) {
 		writeClientError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toClientResponse(item))
+	c.JSON(http.StatusOK, h.visible(c, item))
+}
+
+func (h *Handler) UpdateMedical(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var req MedicalRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.MedicalCertificate == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "medical_certificate is required"})
+		return
+	}
+	if err := h.service.UpdateMedical(c.Request.Context(), id, *req.MedicalCertificate); err != nil {
+		writeClientError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func parseID(c *gin.Context) (int, bool) {
@@ -91,15 +117,24 @@ func queryID(c *gin.Context, name string) (int, bool) {
 	return id, true
 }
 
-func toClientResponse(item Client) ClientResponse {
-	return ClientResponse{
+func (h *Handler) visible(c *gin.Context, item Client) ClientResponse {
+	resp := ClientResponse{
 		ID:                 item.ID,
 		UserID:             item.UserID,
 		Passport:           item.Passport,
 		BirthDate:          item.BirthDate.Format("02.01.2006"),
 		Address:            item.Address,
 		MedicalCertificate: item.MedicalCertificate,
+		Name:               item.Name,
 	}
+	actor, ok := auth.CurrentUser(c)
+	if ok && actor.Role != user.RoleAdmin {
+		resp.Passport = ""
+		resp.BirthDate = ""
+		resp.Address = nil
+		resp.MedicalCertificate = false
+	}
+	return resp
 }
 
 func writeClientError(c *gin.Context, err error) {

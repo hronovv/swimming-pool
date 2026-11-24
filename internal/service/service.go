@@ -13,6 +13,8 @@ type ServiceRepository interface {
 	Update(ctx context.Context, model Model) error
 	UpdateStatus(ctx context.Context, id int, status string) error
 	TariffInfo(ctx context.Context, tariffID int) (TariffInfo, error)
+	MedicalCertificate(ctx context.Context, clientID int) (bool, error)
+	ClientIDByUser(ctx context.Context, userID int) (int, error)
 }
 
 type Service struct {
@@ -44,7 +46,21 @@ func (s *Service) Create(ctx context.Context, model Model) (Model, error) {
 	if err != nil {
 		return Model{}, err
 	}
+	allowed, err := s.repo.MedicalCertificate(ctx, prepared.ClientID)
+	if err != nil {
+		return Model{}, err
+	}
+	if !allowed {
+		return Model{}, fmt.Errorf("%w: medical certificate is required", ErrInvalid)
+	}
 	return s.repo.Create(ctx, prepared)
+}
+
+func (s *Service) ClientIDByUser(ctx context.Context, userID int) (int, error) {
+	if userID <= 0 {
+		return 0, fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.ClientIDByUser(ctx, userID)
 }
 
 func (s *Service) Update(ctx context.Context, model Model) error {

@@ -17,6 +17,7 @@ type Client struct {
 	BirthDate          time.Time `db:"birth_date"`
 	Address            *string   `db:"address"`
 	MedicalCertificate bool      `db:"medical_certificate"`
+	Name               string    `db:"name"`
 }
 
 type Filter struct {

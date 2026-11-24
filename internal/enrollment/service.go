@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -64,7 +65,27 @@ func (s *Service) matchLinks(ctx context.Context, item Enrollment) error {
 	if needsGroup && (serviceLink.GroupID == nil || sessionLink.GroupID == nil || *serviceLink.GroupID != *sessionLink.GroupID) {
 		return fmt.Errorf("%w: group service must be enrolled on a session of the same group", ErrInvalid)
 	}
+	if serviceLink.Status != "active" {
+		return fmt.Errorf("%w: service must be active", ErrInvalid)
+	}
+	sessionDay := dateOnly(sessionLink.SessionDate)
+	start := dateOnly(serviceLink.StartDate)
+	end := dateOnly(serviceLink.EndDate)
+	if sessionDay.Before(start) || sessionDay.After(end) {
+		return fmt.Errorf("%w: session date is outside the service period", ErrInvalid)
+	}
+	if serviceLink.VisitLimit != nil && serviceLink.UsedVisits >= *serviceLink.VisitLimit {
+		return fmt.Errorf("%w: visit limit is reached", ErrInvalid)
+	}
+	if item.ActorUserID != 0 && serviceLink.ClientUserID != item.ActorUserID {
+		return fmt.Errorf("%w: service belongs to another client", ErrInvalid)
+	}
 	return nil
+}
+
+func dateOnly(value time.Time) time.Time {
+	year, month, day := value.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
 func prepareEnrollment(item Enrollment) (Enrollment, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -93,7 +94,13 @@ func (r *Repository) GetByLogin(ctx context.Context, login string) (User, error)
 	return user, nil
 }
 
-func (r *Repository) Create(ctx context.Context, user User) (User, error) {
+func (r *Repository) Create(ctx context.Context, user User, profile Profile) (User, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return User{}, fmt.Errorf("begin user create: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	sqlQuery := `
 		INSERT INTO users (
 			login, password_hash, last_name, first_name, patronymic,
@@ -103,7 +110,7 @@ func (r *Repository) Create(ctx context.Context, user User) (User, error) {
 			($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, registered_at;
 	`
-	err := r.db.QueryRow(
+	err = tx.QueryRow(
 		ctx,
 		sqlQuery,
 		user.Login,
@@ -119,7 +126,120 @@ func (r *Repository) Create(ctx context.Context, user User) (User, error) {
 	if err != nil {
 		return User{}, mapRepoErr(err, "failed to create user")
 	}
+
+	switch user.Role {
+	case RoleClient:
+		var address *string
+		if profile.Address != "" {
+			address = &profile.Address
+		}
+		_, err = tx.Exec(ctx, `
+			INSERT INTO clients (user_id, passport, birth_date, address, medical_certificate)
+			VALUES ($1, $2, $3, $4, $5)
+		`, user.ID, profile.Passport, profile.BirthDate, address, profile.MedicalCertificate)
+	case RoleTrainer:
+		_, err = tx.Exec(ctx, `
+			INSERT INTO trainers (user_id, qualification, rank, experience_years, specialization)
+			VALUES ($1, $2, $3, $4, $5)
+		`, user.ID, profile.Qualification, profile.Rank, profile.ExperienceYears, profile.Specialization)
+	}
+	if err != nil {
+		return User{}, mapRepoErr(err, "failed to create user profile")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return User{}, fmt.Errorf("commit user create: %w", err)
+	}
 	return user, nil
+}
+
+func (r *Repository) Card(ctx context.Context, userID int) (int, int, error) {
+	var clientID, trainerID int
+	err := r.db.QueryRow(ctx, `
+		SELECT
+			COALESCE((SELECT id FROM clients WHERE user_id = $1), 0),
+			COALESCE((SELECT id FROM trainers WHERE user_id = $1), 0)
+	`, userID).Scan(&clientID, &trainerID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("user card: %w", err)
+	}
+	return clientID, trainerID, nil
+}
+
+func (r *Repository) ChangeRole(ctx context.Context, user User, profile Profile) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin role change: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var oldRole string
+	err = tx.QueryRow(ctx, `SELECT role FROM users WHERE id = $1`, user.ID).Scan(&oldRole)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("read user role: %w", err)
+	}
+	if err := updateUser(ctx, tx, user); err != nil {
+		return err
+	}
+	if oldRole == RoleClient && user.Role != RoleClient {
+		if _, err := tx.Exec(ctx, `DELETE FROM clients WHERE user_id = $1`, user.ID); err != nil {
+			return cardInUse(err, "client card is still in use")
+		}
+	}
+	if oldRole == RoleTrainer && user.Role != RoleTrainer {
+		if _, err := tx.Exec(ctx, `DELETE FROM trainers WHERE user_id = $1`, user.ID); err != nil {
+			return cardInUse(err, "trainer card is still in use")
+		}
+	}
+	switch user.Role {
+	case RoleClient:
+		var address *string
+		if profile.Address != "" {
+			address = &profile.Address
+		}
+		_, err = tx.Exec(ctx, `
+			INSERT INTO clients (user_id, passport, birth_date, address, medical_certificate)
+			VALUES ($1, $2, $3, $4, $5)
+		`, user.ID, profile.Passport, profile.BirthDate, address, profile.MedicalCertificate)
+	case RoleTrainer:
+		_, err = tx.Exec(ctx, `
+			INSERT INTO trainers (user_id, qualification, rank, experience_years, specialization)
+			VALUES ($1, $2, $3, $4, $5)
+		`, user.ID, profile.Qualification, profile.Rank, profile.ExperienceYears, profile.Specialization)
+	}
+	if err != nil {
+		return mapRepoErr(err, "failed to create user profile")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit role change: %w", err)
+	}
+	return nil
+}
+
+func updateUser(ctx context.Context, tx pgx.Tx, user User) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE users
+		SET login = $1, last_name = $2, first_name = $3, patronymic = $4,
+			role = $5, phone = $6, email = $7
+		WHERE id = $8
+	`, user.Login, user.LastName, user.FirstName, user.Patronymic, user.Role, user.Phone, user.Email, user.ID)
+	if err != nil {
+		return mapRepoErr(err, "failed to update user")
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func cardInUse(err error, message string) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && (pgErr.Code == "23503" || pgErr.Code == "23001") {
+		return fmt.Errorf("%w: %s", ErrInvalid, message)
+	}
+	return fmt.Errorf("delete profile card: %w", err)
 }
 
 func (r *Repository) Update(ctx context.Context, user User) error {
@@ -194,6 +314,9 @@ func (r *Repository) UpdatePassword(ctx context.Context, id int, passwordHash st
 func mapRepoErr(err error, op string) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if strings.Contains(pgErr.ConstraintName, "passport") {
+			return ErrPassportTaken
+		}
 		return ErrConflict
 	}
 	return fmt.Errorf("%s: %w", op, err)

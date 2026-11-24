@@ -87,26 +87,53 @@ func (r *Repository) GetByID(ctx context.Context, ID int) (Entry, error) {
 }
 
 func (r *Repository) Create(ctx context.Context, entry Entry) (Entry, error) {
-	sqlQuery := `
-		INSERT INTO action_logs (user_id, action, object, description, result, ip_address)
-		VALUES
-			($1, $2, $3, $4, $5, $6)
-		RETURNING id, occurred_at;
-	`
-	err := r.db.QueryRow(
-		ctx,
-		sqlQuery,
+	procedure, err := procedureName(entry.Action)
+	if err != nil {
+		return Entry{}, err
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return Entry{}, fmt.Errorf("begin journal entry: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `CALL `+procedure+`($1, $2, $3, $4, $5)`,
 		entry.UserID,
-		entry.Action,
 		entry.Object,
 		entry.Description,
 		entry.Result,
 		entry.IPAddress,
-	).Scan(&entry.ID, &entry.OccurredAt)
+	)
 	if err != nil {
 		return Entry{}, mapRepoErr(err)
 	}
+	err = tx.QueryRow(ctx, `
+		SELECT id, occurred_at
+		FROM action_logs
+		WHERE id = currval(pg_get_serial_sequence('action_logs', 'id'))
+	`).Scan(&entry.ID, &entry.OccurredAt)
+	if err != nil {
+		return Entry{}, fmt.Errorf("read journal entry: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Entry{}, fmt.Errorf("commit journal entry: %w", err)
+	}
 	return entry, nil
+}
+
+func procedureName(action string) (string, error) {
+	switch action {
+	case ActionLogin:
+		return "log_authorization", nil
+	case ActionCreate:
+		return "log_create", nil
+	case ActionUpdate:
+		return "log_update", nil
+	case ActionDelete:
+		return "log_delete", nil
+	default:
+		return "", fmt.Errorf("%w: action must be login, create, update or delete", ErrInvalid)
+	}
 }
 
 func mapRepoErr(err error) error {

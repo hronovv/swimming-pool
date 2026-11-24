@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"pool/internal/auth"
+	"pool/internal/user"
 )
 
 type Handler struct {
@@ -31,13 +33,17 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 }
 
 type ServiceResponse struct {
-	ID        int    `json:"id"`
-	ClientID  int    `json:"client_id"`
-	TariffID  int    `json:"tariff_id"`
-	GroupID   *int   `json:"group_id"`
-	StartDate string `json:"start_date"`
-	EndDate   string `json:"end_date"`
-	Status    string `json:"status"`
+	ID           int     `json:"id"`
+	ClientID     int     `json:"client_id"`
+	TariffID     int     `json:"tariff_id"`
+	GroupID      *int    `json:"group_id"`
+	StartDate    string  `json:"start_date"`
+	EndDate      string  `json:"end_date"`
+	Status       string  `json:"status"`
+	ClientName   string  `json:"client_name"`
+	TariffName   string  `json:"tariff_name"`
+	WorkFormatID int     `json:"work_format_id"`
+	GroupName    *string `json:"group_name"`
 }
 
 type ServiceRequest struct {
@@ -55,6 +61,10 @@ type StatusRequest struct {
 
 func (h *Handler) GetAll(c *gin.Context) {
 	filter, ok := parseFilter(c)
+	if !ok {
+		return
+	}
+	filter, ok = h.ownServices(c, filter)
 	if !ok {
 		return
 	}
@@ -84,8 +94,62 @@ func (h *Handler) GetByID(c *gin.Context) {
 		writeServiceError(c, err)
 		return
 	}
+	if !h.canSeeService(c, model.ClientID) {
+		return
+	}
 
 	c.JSON(http.StatusOK, toServiceResponse(model))
+}
+
+func (h *Handler) ownServices(c *gin.Context, filter Filter) (Filter, bool) {
+	actor, ok := auth.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return filter, false
+	}
+	if actor.Role == user.RoleTrainer {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return filter, false
+	}
+	if actor.Role != user.RoleClient {
+		return filter, true
+	}
+	clientID, err := h.service.ClientIDByUser(c.Request.Context(), actor.ID)
+	if err != nil {
+		writeServiceError(c, err)
+		return filter, false
+	}
+	if clientID == 0 {
+		c.JSON(http.StatusOK, []ServiceResponse{})
+		return filter, false
+	}
+	filter.ClientID = clientID
+	return filter, true
+}
+
+func (h *Handler) canSeeService(c *gin.Context, clientID int) bool {
+	actor, ok := auth.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return false
+	}
+	if actor.Role == user.RoleTrainer {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return false
+	}
+	if actor.Role != user.RoleClient {
+		return true
+	}
+	own, err := h.service.ClientIDByUser(c.Request.Context(), actor.ID)
+	if err != nil {
+		writeServiceError(c, err)
+		return false
+	}
+	if own != clientID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "service not found"})
+		return false
+	}
+	return true
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -225,13 +289,17 @@ func toModel(c *gin.Context, req ServiceRequest, id int) (Model, bool) {
 
 func toServiceResponse(model Model) ServiceResponse {
 	return ServiceResponse{
-		ID:        model.ID,
-		ClientID:  model.ClientID,
-		TariffID:  model.TariffID,
-		GroupID:   model.GroupID,
-		StartDate: model.StartDate.Format("02.01.2006"),
-		EndDate:   model.EndDate.Format("02.01.2006"),
-		Status:    model.Status,
+		ID:           model.ID,
+		ClientID:     model.ClientID,
+		TariffID:     model.TariffID,
+		GroupID:      model.GroupID,
+		StartDate:    model.StartDate.Format("02.01.2006"),
+		EndDate:      model.EndDate.Format("02.01.2006"),
+		Status:       model.Status,
+		ClientName:   model.ClientName,
+		TariffName:   model.TariffName,
+		WorkFormatID: model.WorkFormatID,
+		GroupName:    model.GroupName,
 	}
 }
 

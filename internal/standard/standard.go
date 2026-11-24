@@ -31,16 +31,18 @@ var (
 )
 
 type Standard struct {
-	ID         int        `db:"id"`
-	ClientID   int        `db:"client_id"`
-	TrainerID  int        `db:"trainer_id"`
-	Style      string     `db:"style"`
-	DistanceM  int        `db:"distance_m"`
-	HeldOn     time.Time  `db:"held_on"`
-	ResultTime *time.Time `db:"result_time"`
-	Outcome    string     `db:"outcome"`
-	AttemptNo  int        `db:"attempt_no"`
-	Comment    *string    `db:"comment"`
+	ID          int        `db:"id"`
+	ClientID    int        `db:"client_id"`
+	TrainerID   int        `db:"trainer_id"`
+	Style       string     `db:"style"`
+	DistanceM   int        `db:"distance_m"`
+	HeldOn      time.Time  `db:"held_on"`
+	ResultTime  *time.Time `db:"result_time"`
+	Outcome     string     `db:"outcome"`
+	AttemptNo   int        `db:"attempt_no"`
+	Comment     *string    `db:"comment"`
+	ClientName  string     `db:"client_name"`
+	TrainerName string     `db:"trainer_name"`
 }
 
 type Filter struct {

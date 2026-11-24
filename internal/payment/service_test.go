@@ -25,8 +25,9 @@ func (s *stubRepo) Create(_ context.Context, payment Payment) (Payment, error) {
 	}
 	return payment, nil
 }
-func (s *stubRepo) Update(context.Context, Payment) error           { return nil }
-func (s *stubRepo) UpdateStatus(context.Context, int, string) error { return nil }
+func (s *stubRepo) Update(context.Context, Payment) error            { return nil }
+func (s *stubRepo) UpdateStatus(context.Context, int, string) error  { return nil }
+func (s *stubRepo) ClientIDByUser(context.Context, int) (int, error) { return 0, nil }
 func (s *stubRepo) ServiceFormat(context.Context, int) (string, error) {
 	return s.format, s.formatErr
 }

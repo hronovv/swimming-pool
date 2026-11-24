@@ -14,6 +14,7 @@ type PaymentRepository interface {
 	Update(ctx context.Context, payment Payment) error
 	UpdateStatus(ctx context.Context, id int, status string) error
 	ServiceFormat(ctx context.Context, serviceID int) (string, error)
+	ClientIDByUser(ctx context.Context, userID int) (int, error)
 }
 
 type Service struct {
@@ -24,6 +25,13 @@ func NewService(repo PaymentRepository) *Service {
 	return &Service{
 		repo: repo,
 	}
+}
+
+func (s *Service) ClientIDByUser(ctx context.Context, userID int) (int, error) {
+	if userID <= 0 {
+		return 0, fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.ClientIDByUser(ctx, userID)
 }
 
 func (s *Service) GetAll(ctx context.Context, filter Filter) ([]Payment, error) {

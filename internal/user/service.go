@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
@@ -14,8 +15,10 @@ type UserRepository interface {
 	GetAll(ctx context.Context, filter Filter) ([]User, error)
 	GetByID(ctx context.Context, ID int) (User, error)
 	GetByLogin(ctx context.Context, login string) (User, error)
-	Create(ctx context.Context, user User) (User, error)
+	Create(ctx context.Context, user User, profile Profile) (User, error)
 	Update(ctx context.Context, user User) error
+	ChangeRole(ctx context.Context, user User, profile Profile) error
+	Card(ctx context.Context, userID int) (clientID int, trainerID int, err error)
 	UpdateStatus(ctx context.Context, id int, status string) error
 	UpdatePassword(ctx context.Context, id int, passwordHash string) error
 }
@@ -71,24 +74,46 @@ func (s *Service) Create(ctx context.Context, in NewUser) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
+	profile, err := prepareProfile(u.Role, in.Profile)
+	if err != nil {
+		return User{}, err
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return User{}, err
 	}
 	u.PasswordHash = string(hash)
-	return s.repo.Create(ctx, u)
+	return s.repo.Create(ctx, u, profile)
 }
 
 func (s *Service) Update(ctx context.Context, id int, in UserUpdate) error {
 	if id <= 0 {
 		return fmt.Errorf("%w: id is required", ErrInvalid)
 	}
+	existing, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
 	u, err := prepareUserUpdate(in)
 	if err != nil {
 		return err
 	}
 	u.ID = id
-	return s.repo.Update(ctx, u)
+	if existing.Role == u.Role {
+		return s.repo.Update(ctx, u)
+	}
+	profile, err := prepareProfile(u.Role, in.Profile)
+	if err != nil {
+		return err
+	}
+	return s.repo.ChangeRole(ctx, u, profile)
+}
+
+func (s *Service) Card(ctx context.Context, userID int) (int, int, error) {
+	if userID <= 0 {
+		return 0, 0, fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.Card(ctx, userID)
 }
 
 func (s *Service) UpdateStatus(ctx context.Context, id int, status string) error {
@@ -238,6 +263,79 @@ func validateFilter(filter Filter) error {
 	}
 	return nil
 }
+
+func prepareProfile(role string, in Profile) (Profile, error) {
+	switch role {
+	case RoleAdmin:
+		return Profile{}, nil
+	case RoleClient:
+		in.Passport = strings.TrimSpace(in.Passport)
+		in.Address = strings.TrimSpace(in.Address)
+		if in.Passport == "" {
+			return Profile{}, fmt.Errorf("%w: passport is required", ErrInvalid)
+		}
+		if utf8.RuneCountInString(in.Passport) > 20 {
+			return Profile{}, fmt.Errorf("%w: passport must be at most 20 characters", ErrInvalid)
+		}
+		if in.BirthDate.IsZero() {
+			return Profile{}, fmt.Errorf("%w: birth_date is required", ErrInvalid)
+		}
+		if !dateOnly(in.BirthDate).Before(dateOnly(time.Now())) {
+			return Profile{}, fmt.Errorf("%w: birth_date must be in the past", ErrInvalid)
+		}
+		if utf8.RuneCountInString(in.Address) > 200 {
+			return Profile{}, fmt.Errorf("%w: address must be at most 200 characters", ErrInvalid)
+		}
+		return Profile{
+			Passport:           in.Passport,
+			BirthDate:          dateOnly(in.BirthDate),
+			Address:            in.Address,
+			MedicalCertificate: in.MedicalCertificate,
+		}, nil
+	case RoleTrainer:
+		in.Qualification = strings.TrimSpace(in.Qualification)
+		in.Rank = strings.TrimSpace(in.Rank)
+		in.Specialization = strings.TrimSpace(in.Specialization)
+		if _, ok := allowedQualifications[in.Qualification]; !ok {
+			return Profile{}, fmt.Errorf("%w: qualification must be instructor, trainer or senior_trainer", ErrInvalid)
+		}
+		if _, ok := allowedRanks[in.Rank]; !ok {
+			return Profile{}, fmt.Errorf("%w: rank must be none, 3, 2, 1, cms or ms", ErrInvalid)
+		}
+		if in.ExperienceYears < 0 {
+			return Profile{}, fmt.Errorf("%w: experience_years must be at least 0", ErrInvalid)
+		}
+		if _, ok := allowedSpecializations[in.Specialization]; !ok {
+			return Profile{}, fmt.Errorf("%w: specialization must be freestyle, breaststroke, butterfly, medley, kids or aqua_aerobics", ErrInvalid)
+		}
+		return Profile{
+			Qualification:   in.Qualification,
+			Rank:            in.Rank,
+			ExperienceYears: in.ExperienceYears,
+			Specialization:  in.Specialization,
+		}, nil
+	default:
+		return Profile{}, fmt.Errorf("%w: role must be admin, trainer or client", ErrInvalid)
+	}
+}
+
+func dateOnly(value time.Time) time.Time {
+	year, month, day := value.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+}
+
+var (
+	allowedQualifications = map[string]struct{}{
+		"instructor": {}, "trainer": {}, "senior_trainer": {},
+	}
+	allowedRanks = map[string]struct{}{
+		"none": {}, "3": {}, "2": {}, "1": {}, "cms": {}, "ms": {},
+	}
+	allowedSpecializations = map[string]struct{}{
+		"freestyle": {}, "breaststroke": {}, "butterfly": {},
+		"medley": {}, "kids": {}, "aqua_aerobics": {},
+	}
+)
 
 func optionalString(s string) *string {
 	s = strings.TrimSpace(s)

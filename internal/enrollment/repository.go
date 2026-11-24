@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const personNameSQL = `trim(u.last_name || ' ' || left(u.first_name, 1) || '.' || CASE WHEN coalesce(u.patronymic, '') = '' THEN '' ELSE ' ' || left(u.patronymic, 1) || '.' END)`
+
 type Repository struct {
 	db *pgxpool.Pool
 }
@@ -20,13 +22,19 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Enrollment, error) {
 	sqlQuery := `
-		SELECT e.service_id, e.session_id, e.attended, e.comment
+		SELECT e.service_id, e.session_id, e.attended, e.comment,
+			` + personNameSQL + ` AS client_name, t.name AS tariff_name
 		FROM session_enrollments e
+		JOIN services s ON s.id = e.service_id
+		JOIN clients c ON c.id = s.client_id
+		JOIN users u ON u.id = c.user_id
+		JOIN tariffs t ON t.id = s.tariff_id
 		WHERE ($1 = 0 OR e.service_id = $1)
 		  AND ($2 = 0 OR e.session_id = $2)
+		  AND ($3 = 0 OR c.user_id = $3)
 		ORDER BY e.session_id, e.service_id;
 	`
-	rows, err := r.db.Query(ctx, sqlQuery, filter.ServiceID, filter.SessionID)
+	rows, err := r.db.Query(ctx, sqlQuery, filter.ServiceID, filter.SessionID, filter.ClientUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -63,13 +71,25 @@ func (r *Repository) UpdateAttended(ctx context.Context, serviceID, sessionID in
 
 func (r *Repository) ServiceLink(ctx context.Context, serviceID int) (Link, error) {
 	sqlQuery := `
-		SELECT t.work_format_id, s.group_id
+		SELECT t.work_format_id, s.group_id, s.status, s.start_date, s.end_date, t.visit_limit,
+			(SELECT count(*)::int FROM session_enrollments e WHERE e.service_id = s.id),
+			c.user_id
 		FROM services s
 		JOIN tariffs t ON t.id = s.tariff_id
+		JOIN clients c ON c.id = s.client_id
 		WHERE s.id = $1;
 	`
 	var link Link
-	err := r.db.QueryRow(ctx, sqlQuery, serviceID).Scan(&link.WorkFormatID, &link.GroupID)
+	err := r.db.QueryRow(ctx, sqlQuery, serviceID).Scan(
+		&link.WorkFormatID,
+		&link.GroupID,
+		&link.Status,
+		&link.StartDate,
+		&link.EndDate,
+		&link.VisitLimit,
+		&link.UsedVisits,
+		&link.ClientUserID,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Link{}, ErrServiceNotFound
@@ -81,12 +101,12 @@ func (r *Repository) ServiceLink(ctx context.Context, serviceID int) (Link, erro
 
 func (r *Repository) SessionLink(ctx context.Context, sessionID int) (Link, error) {
 	sqlQuery := `
-		SELECT s.work_format_id, s.group_id
+		SELECT s.work_format_id, s.group_id, s.session_date
 		FROM sessions s
 		WHERE s.id = $1;
 	`
 	var link Link
-	err := r.db.QueryRow(ctx, sqlQuery, sessionID).Scan(&link.WorkFormatID, &link.GroupID)
+	err := r.db.QueryRow(ctx, sqlQuery, sessionID).Scan(&link.WorkFormatID, &link.GroupID, &link.SessionDate)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Link{}, ErrSessionNotFound

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -54,14 +56,22 @@ type UserResponse struct {
 }
 
 type UserRequest struct {
-	Login      string `json:"login"`
-	Password   string `json:"password"`
-	LastName   string `json:"last_name"`
-	FirstName  string `json:"first_name"`
-	Patronymic string `json:"patronymic"`
-	Role       string `json:"role"`
-	Phone      string `json:"phone"`
-	Email      string `json:"email"`
+	Login              string `json:"login"`
+	Password           string `json:"password"`
+	LastName           string `json:"last_name"`
+	FirstName          string `json:"first_name"`
+	Patronymic         string `json:"patronymic"`
+	Role               string `json:"role"`
+	Phone              string `json:"phone"`
+	Email              string `json:"email"`
+	Passport           string `json:"passport"`
+	BirthDate          string `json:"birth_date"`
+	Address            string `json:"address"`
+	MedicalCertificate bool   `json:"medical_certificate"`
+	Qualification      string `json:"qualification"`
+	Rank               string `json:"rank"`
+	ExperienceYears    int    `json:"experience_years"`
+	Specialization     string `json:"specialization"`
 }
 
 type StatusRequest struct {
@@ -112,6 +122,15 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
+	var birthDate time.Time
+	if strings.TrimSpace(req.BirthDate) != "" {
+		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(req.BirthDate))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user: birth_date must be YYYY-MM-DD"})
+			return
+		}
+		birthDate = parsed
+	}
 	created, err := h.service.Create(c.Request.Context(), NewUser{
 		Login:      req.Login,
 		Password:   req.Password,
@@ -121,6 +140,16 @@ func (h *Handler) Create(c *gin.Context) {
 		Role:       req.Role,
 		Phone:      req.Phone,
 		Email:      req.Email,
+		Profile: Profile{
+			Passport:           req.Passport,
+			BirthDate:          birthDate,
+			Address:            req.Address,
+			MedicalCertificate: req.MedicalCertificate,
+			Qualification:      req.Qualification,
+			Rank:               req.Rank,
+			ExperienceYears:    req.ExperienceYears,
+			Specialization:     req.Specialization,
+		},
 	})
 	if err != nil {
 		writeUserError(c, err)
@@ -142,6 +171,15 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	var birthDate time.Time
+	if strings.TrimSpace(req.BirthDate) != "" {
+		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(req.BirthDate))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user: birth_date must be YYYY-MM-DD"})
+			return
+		}
+		birthDate = parsed
+	}
 	err := h.service.Update(c.Request.Context(), id, UserUpdate{
 		Login:      req.Login,
 		LastName:   req.LastName,
@@ -150,6 +188,16 @@ func (h *Handler) Update(c *gin.Context) {
 		Role:       req.Role,
 		Phone:      req.Phone,
 		Email:      req.Email,
+		Profile: Profile{
+			Passport:           req.Passport,
+			BirthDate:          birthDate,
+			Address:            req.Address,
+			MedicalCertificate: req.MedicalCertificate,
+			Qualification:      req.Qualification,
+			Rank:               req.Rank,
+			ExperienceYears:    req.ExperienceYears,
+			Specialization:     req.Specialization,
+		},
 	})
 	if err != nil {
 		writeUserError(c, err)
@@ -231,6 +279,8 @@ func writeUserError(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 	case errors.Is(err, ErrConflict):
 		c.JSON(http.StatusConflict, gin.H{"error": "user already exists"})
+	case errors.Is(err, ErrPassportTaken):
+		c.JSON(http.StatusConflict, gin.H{"error": "passport already exists"})
 	case errors.Is(err, ErrUnauthorized):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 	case errors.Is(err, ErrBlocked):

@@ -103,7 +103,7 @@ func main() {
 
 	port := ":8080"
 	srv := server.New(port,
-		auth.RequireUser(userService, issuer),
+		auth.RequireUser(userService, issuer, journal.Record(journalService)),
 		authHandler,
 		userHandler,
 		tariffHandler,
