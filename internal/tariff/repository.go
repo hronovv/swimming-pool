@@ -23,8 +23,13 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 func (r *Repository) GetAll(ctx context.Context) ([]Tariff, error) {
 	sqlQuery := `
 		SELECT
-		t.id, t.name, t.format, t.work_format_id, t.price, t.visit_limit, t.duration_days
+		t.id, t.name, t.format, t.work_format_id, t.price, t.visit_limit, t.duration_days,
+		coalesce(m.services_cnt, 0) AS services_cnt,
+		coalesce(m.completed_payments_cnt, 0) AS completed_payments_cnt,
+		coalesce(m.revenue, 0) AS revenue,
+		coalesce(m.avg_check, 0) AS avg_check
 		FROM tariffs t
+		LEFT JOIN mv_tariff_stats m ON m.tariff_id = t.id
 		ORDER BY t.id;
 	`
 
@@ -44,8 +49,13 @@ func (r *Repository) GetAll(ctx context.Context) ([]Tariff, error) {
 func (r *Repository) GetByID(ctx context.Context, ID int) (Tariff, error) {
 	sqlQuery := `
 		SELECT
-		t.id, t.name, t.format, t.work_format_id, t.price, t.visit_limit, t.duration_days
+		t.id, t.name, t.format, t.work_format_id, t.price, t.visit_limit, t.duration_days,
+		coalesce(m.services_cnt, 0) AS services_cnt,
+		coalesce(m.completed_payments_cnt, 0) AS completed_payments_cnt,
+		coalesce(m.revenue, 0) AS revenue,
+		coalesce(m.avg_check, 0) AS avg_check
 		FROM tariffs t
+		LEFT JOIN mv_tariff_stats m ON m.tariff_id = t.id
 		WHERE t.id = $1;
 	`
 
@@ -85,6 +95,7 @@ func (r *Repository) Create(ctx context.Context, tariff Tariff) (Tariff, error) 
 	if err != nil {
 		return Tariff{}, mapRepoErr(err, "failed to create tariff")
 	}
+	_ = r.RefreshStats(ctx)
 	return tariff, nil
 }
 
@@ -119,8 +130,13 @@ func (r *Repository) Update(ctx context.Context, tariff Tariff) error {
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-
+	_ = r.RefreshStats(ctx)
 	return nil
+}
+
+func (r *Repository) RefreshStats(ctx context.Context) error {
+	_, err := r.db.Exec(ctx, `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_tariff_stats`)
+	return err
 }
 
 func mapRepoErr(err error, op string) error {

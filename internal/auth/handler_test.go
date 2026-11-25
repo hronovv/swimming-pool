@@ -396,7 +396,7 @@ func (s *stubUsers) Authenticate(_ context.Context, login, password string) (use
 	s.gotLogin = login
 	s.gotPassword = password
 	if s.authErr != nil {
-		return user.User{}, s.authErr
+		return s.u, s.authErr
 	}
 	return s.u, nil
 }

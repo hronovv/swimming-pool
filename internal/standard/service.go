@@ -11,7 +11,9 @@ type StandardRepository interface {
 	GetAll(ctx context.Context, filter Filter) ([]Standard, error)
 	GetByID(ctx context.Context, ID int) (Standard, error)
 	Create(ctx context.Context, item Standard) (Standard, error)
+	Update(ctx context.Context, item Standard) error
 	ClientIDByUser(ctx context.Context, userID int) (int, error)
+	TrainerIDByUser(ctx context.Context, userID int) (int, error)
 }
 
 type Service struct {
@@ -27,6 +29,13 @@ func (s *Service) ClientIDByUser(ctx context.Context, userID int) (int, error) {
 		return 0, fmt.Errorf("%w: id is required", ErrInvalid)
 	}
 	return s.repo.ClientIDByUser(ctx, userID)
+}
+
+func (s *Service) TrainerIDByUser(ctx context.Context, userID int) (int, error) {
+	if userID <= 0 {
+		return 0, fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.TrainerIDByUser(ctx, userID)
 }
 
 func (s *Service) GetAll(ctx context.Context, filter Filter) ([]Standard, error) {
@@ -49,6 +58,18 @@ func (s *Service) Create(ctx context.Context, item Standard) (Standard, error) {
 		return Standard{}, err
 	}
 	return s.repo.Create(ctx, prepared)
+}
+
+func (s *Service) Update(ctx context.Context, item Standard) error {
+	if item.ID <= 0 {
+		return fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	prepared, err := prepareStandard(item)
+	if err != nil {
+		return err
+	}
+	prepared.ID = item.ID
+	return s.repo.Update(ctx, prepared)
 }
 
 func prepareStandard(item Standard) (Standard, error) {

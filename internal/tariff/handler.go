@@ -37,13 +37,17 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 }
 
 type TariffResponse struct {
-	ID           int     `json:"id"`
-	Name         string  `json:"name"`
-	Format       string  `json:"format"`
-	WorkFormatID int     `json:"work_format_id"`
-	Price        float64 `json:"price"`
-	VisitLimit   *int    `json:"visit_limit"`
-	DurationDays int     `json:"duration_days"`
+	ID                   int     `json:"id"`
+	Name                 string  `json:"name"`
+	Format               string  `json:"format"`
+	WorkFormatID         int     `json:"work_format_id"`
+	Price                float64 `json:"price"`
+	VisitLimit           *int    `json:"visit_limit"`
+	DurationDays         int     `json:"duration_days"`
+	ServicesCnt          int64   `json:"services_cnt"`
+	CompletedPaymentsCnt int64   `json:"completed_payments_cnt"`
+	Revenue              float64 `json:"revenue"`
+	AvgCheck             float64 `json:"avg_check"`
 }
 
 type TariffRequest struct {
@@ -142,13 +146,17 @@ func toTariff(req TariffRequest, id int) Tariff {
 
 func toTariffResponse(tariff Tariff) TariffResponse {
 	return TariffResponse{
-		ID:           tariff.ID,
-		Name:         tariff.Name,
-		Format:       tariff.Format,
-		WorkFormatID: tariff.WorkFormatID,
-		Price:        tariff.Price,
-		VisitLimit:   tariff.VisitLimit,
-		DurationDays: tariff.DurationDays,
+		ID:                   tariff.ID,
+		Name:                 tariff.Name,
+		Format:               tariff.Format,
+		WorkFormatID:         tariff.WorkFormatID,
+		Price:                tariff.Price,
+		VisitLimit:           tariff.VisitLimit,
+		DurationDays:         tariff.DurationDays,
+		ServicesCnt:          tariff.ServicesCnt,
+		CompletedPaymentsCnt: tariff.CompletedPaymentsCnt,
+		Revenue:              tariff.Revenue,
+		AvgCheck:             tariff.AvgCheck,
 	}
 }
 

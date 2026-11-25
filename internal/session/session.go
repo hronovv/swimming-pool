@@ -43,13 +43,16 @@ type Session struct {
 	LaneName     *string   `db:"lane_name"`
 	TrainerIDs   []int     `db:"-"`
 	TrainerNames []string  `db:"-"`
+	ClientID     *int      `db:"-"`
 }
 
 type Filter struct {
-	WorkFormatID int
-	GroupID      int
-	LaneID       int
-	WasHeld      *bool
-	From         time.Time
-	To           time.Time
+	WorkFormatID  int
+	GroupID       int
+	LaneID        int
+	WasHeld       *bool
+	From          time.Time
+	To            time.Time
+	TrainerUserID int
+	ClientUserID  int
 }

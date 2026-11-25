@@ -18,6 +18,7 @@ func (s *stubRepo) Create(_ context.Context, item Permit) (Permit, error) {
 	s.created = item
 	return item, nil
 }
+func (s *stubRepo) Update(context.Context, int, int, Permit) error { return nil }
 
 func TestCreateRejectsFreeSwimAndExpiredDate(t *testing.T) {
 	svc := NewService(&stubRepo{})

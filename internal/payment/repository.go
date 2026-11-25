@@ -14,7 +14,7 @@ type Repository struct {
 	db *pgxpool.Pool
 }
 
-const personNameSQL = `trim(u.last_name || ' ' || left(u.first_name, 1) || '.' || CASE WHEN coalesce(u.patronymic, '') = '' THEN '' ELSE ' ' || left(u.patronymic, 1) || '.' END)`
+const viewPersonNameSQL = `trim(v.last_name || ' ' || left(v.first_name, 1) || '.' || CASE WHEN coalesce(v.patronymic, '') = '' THEN '' ELSE ' ' || left(v.patronymic, 1) || '.' END)`
 
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{
@@ -25,17 +25,14 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Payment, error) {
 	sqlQuery := `
 		SELECT
-		p.id, p.service_id, p.amount, p.paid_on, p.method, p.purpose, p.status,
-		s.client_id, ` + personNameSQL + ` AS client_name
-		FROM payments p
-		JOIN services s ON s.id = p.service_id
-		JOIN clients c ON c.id = s.client_id
-		JOIN users u ON u.id = c.user_id
-		WHERE ($1 = 0 OR p.service_id = $1)
-		  AND ($2 = '' OR p.status = $2)
-		  AND ($3 = '' OR p.method = $3)
-		  AND ($4 = 0 OR s.client_id = $4)
-		ORDER BY p.id;
+		v.payment_id AS id, v.service_id, v.amount, v.paid_on, v.method, v.purpose, v.status,
+		v.client_id, ` + viewPersonNameSQL + ` AS client_name
+		FROM v_payments v
+		WHERE ($1 = 0 OR v.service_id = $1)
+		  AND ($2 = '' OR v.status = $2)
+		  AND ($3 = '' OR v.method = $3)
+		  AND ($4 = 0 OR v.client_id = $4)
+		ORDER BY v.payment_id;
 	`
 
 	rows, err := r.db.Query(ctx, sqlQuery, filter.ServiceID, filter.Status, filter.Method, filter.ClientID)
@@ -66,13 +63,10 @@ func (r *Repository) ClientIDByUser(ctx context.Context, userID int) (int, error
 func (r *Repository) GetByID(ctx context.Context, ID int) (Payment, error) {
 	sqlQuery := `
 		SELECT
-		p.id, p.service_id, p.amount, p.paid_on, p.method, p.purpose, p.status,
-		s.client_id, ` + personNameSQL + ` AS client_name
-		FROM payments p
-		JOIN services s ON s.id = p.service_id
-		JOIN clients c ON c.id = s.client_id
-		JOIN users u ON u.id = c.user_id
-		WHERE p.id = $1;
+		v.payment_id AS id, v.service_id, v.amount, v.paid_on, v.method, v.purpose, v.status,
+		v.client_id, ` + viewPersonNameSQL + ` AS client_name
+		FROM v_payments v
+		WHERE v.payment_id = $1;
 	`
 
 	rows, err := r.db.Query(ctx, sqlQuery, ID)
@@ -117,6 +111,7 @@ func (r *Repository) Create(ctx context.Context, payment Payment) (Payment, erro
 	if err != nil {
 		return Payment{}, mapRepoErr(err, "failed to create payment")
 	}
+	_ = r.refreshTariffStats(ctx)
 	return payment, nil
 }
 
@@ -148,6 +143,7 @@ func (r *Repository) Update(ctx context.Context, payment Payment) error {
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	_ = r.refreshTariffStats(ctx)
 	return nil
 }
 
@@ -165,7 +161,13 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int, status string) er
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	_ = r.refreshTariffStats(ctx)
 	return nil
+}
+
+func (r *Repository) refreshTariffStats(ctx context.Context) error {
+	_, err := r.db.Exec(ctx, `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_tariff_stats`)
+	return err
 }
 
 func (r *Repository) ServiceFormat(ctx context.Context, serviceID int) (string, error) {

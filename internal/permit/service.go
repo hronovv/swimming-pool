@@ -9,6 +9,7 @@ import (
 type PermitRepository interface {
 	GetAll(ctx context.Context, filter Filter) ([]Permit, error)
 	Create(ctx context.Context, item Permit) (Permit, error)
+	Update(ctx context.Context, trainerID, workFormatID int, item Permit) error
 	TrainerIDByUser(ctx context.Context, userID int) (int, error)
 }
 
@@ -35,6 +36,25 @@ func (s *Service) GetAll(ctx context.Context, filter Filter) ([]Permit, error) {
 }
 
 func (s *Service) Create(ctx context.Context, item Permit) (Permit, error) {
+	prepared, err := preparePermit(item)
+	if err != nil {
+		return Permit{}, err
+	}
+	return s.repo.Create(ctx, prepared)
+}
+
+func (s *Service) Update(ctx context.Context, trainerID, workFormatID int, item Permit) error {
+	if trainerID <= 0 || workFormatID <= 0 {
+		return fmt.Errorf("%w: permit is required", ErrInvalid)
+	}
+	prepared, err := preparePermit(item)
+	if err != nil {
+		return err
+	}
+	return s.repo.Update(ctx, trainerID, workFormatID, prepared)
+}
+
+func preparePermit(item Permit) (Permit, error) {
 	if item.TrainerID <= 0 {
 		return Permit{}, fmt.Errorf("%w: trainer_id is required", ErrInvalid)
 	}
@@ -52,7 +72,7 @@ func (s *Service) Create(ctx context.Context, item Permit) (Permit, error) {
 		expires := dateOnly(*item.ExpiresOn)
 		item.ExpiresOn = &expires
 	}
-	return s.repo.Create(ctx, item)
+	return item, nil
 }
 
 func dateOnly(value time.Time) time.Time {

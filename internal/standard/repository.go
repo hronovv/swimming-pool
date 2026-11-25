@@ -48,8 +48,16 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Standard, err
 }
 
 func (r *Repository) ClientIDByUser(ctx context.Context, userID int) (int, error) {
+	return cardIDByUser(ctx, r.db, `SELECT id FROM clients WHERE user_id = $1`, userID)
+}
+
+func (r *Repository) TrainerIDByUser(ctx context.Context, userID int) (int, error) {
+	return cardIDByUser(ctx, r.db, `SELECT id FROM trainers WHERE user_id = $1`, userID)
+}
+
+func cardIDByUser(ctx context.Context, db *pgxpool.Pool, sqlQuery string, userID int) (int, error) {
 	var id int
-	err := r.db.QueryRow(ctx, `SELECT id FROM clients WHERE user_id = $1`, userID).Scan(&id)
+	err := db.QueryRow(ctx, sqlQuery, userID).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, nil
@@ -109,6 +117,36 @@ func (r *Repository) Create(ctx context.Context, item Standard) (Standard, error
 		return Standard{}, mapRepoErr(err)
 	}
 	return item, nil
+}
+
+func (r *Repository) Update(ctx context.Context, item Standard) error {
+	sqlQuery := `
+		UPDATE standards
+		SET client_id = $2, trainer_id = $3, style = $4, distance_m = $5, held_on = $6,
+			result_time = $7::time, outcome = $8, attempt_no = $9, comment = $10
+		WHERE id = $1
+	`
+	tag, err := r.db.Exec(
+		ctx,
+		sqlQuery,
+		item.ID,
+		item.ClientID,
+		item.TrainerID,
+		item.Style,
+		item.DistanceM,
+		item.HeldOn,
+		clockArg(item.ResultTime),
+		item.Outcome,
+		item.AttemptNo,
+		item.Comment,
+	)
+	if err != nil {
+		return mapRepoErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func mapRepoErr(err error) error {

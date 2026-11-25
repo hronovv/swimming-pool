@@ -120,7 +120,7 @@ func validateFilter(filter Filter) error {
 			return err
 		}
 	}
-	if !filter.From.IsZero() && !filter.To.IsZero() && !filter.To.After(filter.From) {
+	if !filter.From.IsZero() && !filter.To.IsZero() && filter.To.Before(filter.From) {
 		return fmt.Errorf("%w: to must be after from", ErrInvalid)
 	}
 	return nil

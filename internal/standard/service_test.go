@@ -14,10 +14,12 @@ func (s *stubRepo) GetByID(context.Context, int) (Standard, error) {
 	return Standard{}, ErrNotFound
 }
 func (s *stubRepo) ClientIDByUser(context.Context, int) (int, error) { return 0, nil }
+func (s *stubRepo) TrainerIDByUser(context.Context, int) (int, error) { return 0, nil }
 func (s *stubRepo) Create(_ context.Context, item Standard) (Standard, error) {
 	item.ID = 4
 	return item, nil
 }
+func (s *stubRepo) Update(context.Context, Standard) error { return nil }
 
 func TestCreateDefaultsAttempt(t *testing.T) {
 	svc := NewService(&stubRepo{})

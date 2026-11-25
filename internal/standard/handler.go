@@ -17,6 +17,8 @@ type StandardService interface {
 	GetByID(ctx context.Context, ID int) (Standard, error)
 	ClientIDByUser(ctx context.Context, userID int) (int, error)
 	Create(ctx context.Context, item Standard) (Standard, error)
+	Update(ctx context.Context, item Standard) error
+	TrainerIDByUser(ctx context.Context, userID int) (int, error)
 }
 
 type Handler struct {
@@ -33,6 +35,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 		standards.GET("/", h.GetAll)
 		standards.POST("/", h.Create)
 		standards.GET("/:id", h.GetByID)
+		standards.PUT("/:id", h.Update)
 	}
 }
 
@@ -72,17 +75,35 @@ func (h *Handler) GetAll(c *gin.Context) {
 	if filter.TrainerID, ok = queryID(c, "trainer_id"); !ok {
 		return
 	}
-	if actor, found := auth.CurrentUser(c); found && actor.Role == user.RoleClient {
-		clientID, err := h.service.ClientIDByUser(c.Request.Context(), actor.ID)
-		if err != nil {
-			writeStandardError(c, err)
-			return
+	if actor, found := auth.CurrentUser(c); found {
+		switch actor.Role {
+		case user.RoleClient:
+			clientID, err := h.service.ClientIDByUser(c.Request.Context(), actor.ID)
+			if err != nil {
+				writeStandardError(c, err)
+				return
+			}
+			if clientID == 0 {
+				c.JSON(http.StatusOK, []StandardResponse{})
+				return
+			}
+			filter.ClientID = clientID
+		case user.RoleTrainer:
+			trainerID, err := h.service.TrainerIDByUser(c.Request.Context(), actor.ID)
+			if err != nil {
+				writeStandardError(c, err)
+				return
+			}
+			if trainerID == 0 {
+				c.JSON(http.StatusOK, []StandardResponse{})
+				return
+			}
+			if filter.TrainerID != 0 && filter.TrainerID != trainerID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+				return
+			}
+			filter.TrainerID = trainerID
 		}
-		if clientID == 0 {
-			c.JSON(http.StatusOK, []StandardResponse{})
-			return
-		}
-		filter.ClientID = clientID
 	}
 	items, err := h.service.GetAll(c.Request.Context(), filter)
 	if err != nil {
@@ -106,41 +127,97 @@ func (h *Handler) GetByID(c *gin.Context) {
 		writeStandardError(c, err)
 		return
 	}
-	if actor, found := auth.CurrentUser(c); found && actor.Role == user.RoleClient {
-		clientID, err := h.service.ClientIDByUser(c.Request.Context(), actor.ID)
-		if err != nil {
-			writeStandardError(c, err)
-			return
-		}
-		if clientID != item.ClientID {
-			c.JSON(http.StatusNotFound, gin.H{"error": "standard not found"})
-			return
+	if actor, found := auth.CurrentUser(c); found {
+		switch actor.Role {
+		case user.RoleClient:
+			clientID, err := h.service.ClientIDByUser(c.Request.Context(), actor.ID)
+			if err != nil {
+				writeStandardError(c, err)
+				return
+			}
+			if clientID != item.ClientID {
+				c.JSON(http.StatusNotFound, gin.H{"error": "standard not found"})
+				return
+			}
+		case user.RoleTrainer:
+			trainerID, err := h.service.TrainerIDByUser(c.Request.Context(), actor.ID)
+			if err != nil {
+				writeStandardError(c, err)
+				return
+			}
+			if trainerID != item.TrainerID {
+				c.JSON(http.StatusNotFound, gin.H{"error": "standard not found"})
+				return
+			}
 		}
 	}
 	c.JSON(http.StatusOK, toStandardResponse(item))
 }
 
 func (h *Handler) Create(c *gin.Context) {
+	item, ok := h.parseStandard(c, 0)
+	if !ok {
+		return
+	}
+	created, err := h.service.Create(c.Request.Context(), item)
+	if err != nil {
+		writeStandardError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, toStandardResponse(created))
+}
+
+func (h *Handler) Update(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	item, ok := h.parseStandard(c, id)
+	if !ok {
+		return
+	}
+	if err := h.service.Update(c.Request.Context(), item); err != nil {
+		writeStandardError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) parseStandard(c *gin.Context, id int) (Standard, bool) {
 	var req StandardRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Status(http.StatusBadRequest)
-		return
+		return Standard{}, false
 	}
 	heldOn, ok := parseDate(c, req.HeldOn, "held_on")
 	if !ok {
-		return
+		return Standard{}, false
 	}
 	result, ok := parseClock(c, req.ResultTime)
 	if !ok {
-		return
+		return Standard{}, false
 	}
 	var comment *string
 	if req.Comment != "" {
 		comment = &req.Comment
 	}
-	created, err := h.service.Create(c.Request.Context(), Standard{
+	trainerID := req.TrainerID
+	if actor, found := auth.CurrentUser(c); found && actor.Role == user.RoleTrainer {
+		own, err := h.service.TrainerIDByUser(c.Request.Context(), actor.ID)
+		if err != nil {
+			writeStandardError(c, err)
+			return Standard{}, false
+		}
+		if own == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return Standard{}, false
+		}
+		trainerID = own
+	}
+	return Standard{
+		ID:         id,
 		ClientID:   req.ClientID,
-		TrainerID:  req.TrainerID,
+		TrainerID:  trainerID,
 		Style:      req.Style,
 		DistanceM:  req.DistanceM,
 		HeldOn:     heldOn,
@@ -148,12 +225,7 @@ func (h *Handler) Create(c *gin.Context) {
 		Outcome:    req.Outcome,
 		AttemptNo:  req.AttemptNo,
 		Comment:    comment,
-	})
-	if err != nil {
-		writeStandardError(c, err)
-		return
-	}
-	c.JSON(http.StatusCreated, toStandardResponse(created))
+	}, true
 }
 
 func parseID(c *gin.Context, name string) (int, bool) {

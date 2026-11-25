@@ -36,6 +36,11 @@ func (s *stubRepo) Create(_ context.Context, user User, profile Profile) (User, 
 	return user, nil
 }
 func (s *stubRepo) Update(context.Context, User) error { return nil }
+func (s *stubRepo) UpdateWithProfile(_ context.Context, user User, profile Profile) error {
+	s.created = user
+	s.profile = profile
+	return nil
+}
 func (s *stubRepo) ChangeRole(_ context.Context, user User, profile Profile) error {
 	s.changed = true
 	s.created = user

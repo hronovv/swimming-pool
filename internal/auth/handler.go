@@ -56,6 +56,9 @@ func (h *Handler) Login(c *gin.Context) {
 
 	u, err := h.users.Authenticate(c.Request.Context(), req.Login, req.Password)
 	if err != nil {
+		if u.ID > 0 {
+			SetCurrentUser(c, u)
+		}
 		writeAuthError(c, err)
 		return
 	}

@@ -33,11 +33,15 @@ var (
 )
 
 type Tariff struct {
-	ID           int     `db:"id"`
-	Name         string  `db:"name"`
-	Format       string  `db:"format"`
-	WorkFormatID int     `db:"work_format_id"`
-	Price        float64 `db:"price"`
-	VisitLimit   *int    `db:"visit_limit"`
-	DurationDays int     `db:"duration_days"`
+	ID                    int     `db:"id"`
+	Name                  string  `db:"name"`
+	Format                string  `db:"format"`
+	WorkFormatID          int     `db:"work_format_id"`
+	Price                 float64 `db:"price"`
+	VisitLimit            *int    `db:"visit_limit"`
+	DurationDays          int     `db:"duration_days"`
+	ServicesCnt           int64   `db:"services_cnt"`
+	CompletedPaymentsCnt  int64   `db:"completed_payments_cnt"`
+	Revenue               float64 `db:"revenue"`
+	AvgCheck              float64 `db:"avg_check"`
 }

@@ -22,7 +22,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Enrollment, error) {
 	sqlQuery := `
-		SELECT e.service_id, e.session_id, e.attended, e.comment,
+		SELECT e.service_id, e.session_id, e.attended, e.comment, s.client_id,
 			` + personNameSQL + ` AS client_name, t.name AS tariff_name
 		FROM session_enrollments e
 		JOIN services s ON s.id = e.service_id

@@ -39,6 +39,7 @@ type EnrollmentResponse struct {
 	SessionID  int     `json:"session_id"`
 	Attended   bool    `json:"attended"`
 	Comment    *string `json:"comment"`
+	ClientID   int     `json:"client_id"`
 	ClientName string  `json:"client_name"`
 	TariffName string  `json:"tariff_name"`
 }
@@ -154,6 +155,7 @@ func toEnrollmentResponse(item Enrollment) EnrollmentResponse {
 		SessionID:  item.SessionID,
 		Attended:   item.Attended,
 		Comment:    item.Comment,
+		ClientID:   item.ClientID,
 		ClientName: item.ClientName,
 		TariffName: item.TariffName,
 	}

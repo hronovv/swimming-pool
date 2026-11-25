@@ -85,6 +85,10 @@ func prepareSession(session Session) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
+	session.ClientID, err = optionalID(session.ClientID, "client_id")
+	if err != nil {
+		return Session{}, err
+	}
 	if err := validateSession(session); err != nil {
 		return Session{}, err
 	}
@@ -109,6 +113,10 @@ func validateSession(session Session) error {
 	}
 	if clockSeconds(session.EndTime) <= clockSeconds(session.StartTime) {
 		return fmt.Errorf("%w: end_time must be after start_time", ErrInvalid)
+	}
+	needsClient := session.WorkFormatID == workFormatFreeSwim || session.WorkFormatID == workFormatIndividual
+	if needsClient && session.ClientID == nil {
+		return fmt.Errorf("%w: client_id is required", ErrInvalid)
 	}
 	return nil
 }

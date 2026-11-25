@@ -12,9 +12,9 @@ import (
 )
 
 const sessionColumns = `
-	s.id, s.work_format_id, s.group_id, s.lane_id, s.session_date,
+	s.session_id AS id, s.work_format_id, s.group_id, s.lane_id, s.session_date,
 	s.start_time, s.end_time, s.topic, s.was_held,
-	g.name AS group_name, l.name AS lane_name
+	s.group_name, s.lane_name
 `
 
 type Repository struct {
@@ -27,19 +27,43 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	}
 }
 
+func viewerScopeSQL(trainerParam, clientParam string) string {
+	return `
+		  AND (` + trainerParam + ` = 0 OR EXISTS (
+			SELECT 1 FROM session_trainers st
+			JOIN trainers tr ON tr.id = st.trainer_id
+			WHERE st.session_id = s.session_id AND tr.user_id = ` + trainerParam + `
+		  ))
+		  AND (` + clientParam + ` = 0 OR EXISTS (
+			SELECT 1 FROM session_enrollments e
+			JOIN services sv ON sv.id = e.service_id
+			JOIN clients cl ON cl.id = sv.client_id
+			WHERE e.session_id = s.session_id AND cl.user_id = ` + clientParam + `
+		  ) OR (
+			s.work_format_id IN (3, 4)
+			AND EXISTS (
+			  SELECT 1 FROM services sv
+			  JOIN clients cl ON cl.id = sv.client_id
+			  WHERE cl.user_id = ` + clientParam + `
+			    AND sv.group_id IS NOT NULL
+			    AND sv.group_id = s.group_id
+			)
+		  ))
+	`
+}
+
 func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Session, error) {
 	sqlQuery := `
 		SELECT` + sessionColumns + `
-		FROM sessions s
-		LEFT JOIN training_groups g ON g.id = s.group_id
-		LEFT JOIN lanes l ON l.id = s.lane_id
+		FROM v_sessions s
 		WHERE ($1 = 0 OR s.work_format_id = $1)
 		  AND ($2 = 0 OR s.group_id = $2)
 		  AND ($3 = 0 OR s.lane_id = $3)
 		  AND ($4::boolean IS NULL OR s.was_held = $4)
 		  AND ($5::date IS NULL OR s.session_date >= $5)
 		  AND ($6::date IS NULL OR s.session_date <= $6)
-		ORDER BY s.session_date, s.start_time, s.id;
+		` + viewerScopeSQL("$7", "$8") + `
+		ORDER BY s.session_date, s.start_time, s.session_id;
 	`
 
 	rows, err := r.db.Query(
@@ -51,6 +75,8 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Session, erro
 		filter.WasHeld,
 		nullableTime(filter.From),
 		nullableTime(filter.To),
+		filter.TrainerUserID,
+		filter.ClientUserID,
 	)
 	if err != nil {
 		return nil, err
@@ -70,13 +96,12 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Session, erro
 func (r *Repository) GetByID(ctx context.Context, ID int) (Session, error) {
 	sqlQuery := `
 		SELECT` + sessionColumns + `
-		FROM sessions s
-		LEFT JOIN training_groups g ON g.id = s.group_id
-		LEFT JOIN lanes l ON l.id = s.lane_id
-		WHERE s.id = $1;
+		FROM v_sessions s
+		WHERE s.session_id = $1
+		` + viewerScopeSQL("$2", "$3") + `;
 	`
 
-	rows, err := r.db.Query(ctx, sqlQuery, ID)
+	rows, err := r.db.Query(ctx, sqlQuery, ID, 0, 0)
 	if err != nil {
 		return Session{}, err
 	}
@@ -133,6 +158,9 @@ func (r *Repository) Create(ctx context.Context, item Session) (Session, error) 
 	if err := insertTrainers(ctx, tx, item.ID, item.TrainerIDs); err != nil {
 		return Session{}, err
 	}
+	if err := enrollClient(ctx, tx, item); err != nil {
+		return Session{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Session{}, err
 	}
@@ -152,28 +180,29 @@ func (r *Repository) Update(ctx context.Context, item Session) error {
 	sqlQuery := `
 		UPDATE sessions
 		SET
-			work_format_id = @work_format_id,
-			group_id = @group_id,
-			lane_id = @lane_id,
-			session_date = @session_date,
-			start_time = @start_time::time,
-			end_time = @end_time::time,
-			topic = @topic,
-			was_held = @was_held
-		WHERE id = @id
+			work_format_id = $2,
+			group_id = $3,
+			lane_id = $4,
+			session_date = $5,
+			start_time = $6::time,
+			end_time = $7::time,
+			topic = $8,
+			was_held = $9
+		WHERE id = $1
 	`
-	args := pgx.NamedArgs{
-		"id":             item.ID,
-		"work_format_id": item.WorkFormatID,
-		"group_id":       item.GroupID,
-		"lane_id":        item.LaneID,
-		"session_date":   item.SessionDate,
-		"start_time":     clockArg(item.StartTime),
-		"end_time":       clockArg(item.EndTime),
-		"topic":          item.Topic,
-		"was_held":       item.WasHeld,
-	}
-	tag, err := tx.Exec(ctx, sqlQuery, args)
+	tag, err := tx.Exec(
+		ctx,
+		sqlQuery,
+		item.ID,
+		item.WorkFormatID,
+		item.GroupID,
+		item.LaneID,
+		item.SessionDate,
+		clockArg(item.StartTime),
+		clockArg(item.EndTime),
+		item.Topic,
+		item.WasHeld,
+	)
 	if err != nil {
 		return mapRepoErr(err, "update session")
 	}
@@ -186,7 +215,42 @@ func (r *Repository) Update(ctx context.Context, item Session) error {
 	if err := insertTrainers(ctx, tx, item.ID, item.TrainerIDs); err != nil {
 		return err
 	}
+	if err := enrollClient(ctx, tx, item); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
+}
+
+func enrollClient(ctx context.Context, tx pgx.Tx, item Session) error {
+	if item.ClientID == nil || *item.ClientID == 0 {
+		return nil
+	}
+	var serviceID int
+	err := tx.QueryRow(ctx, `
+		SELECT s.id
+		FROM services s
+		JOIN tariffs t ON t.id = s.tariff_id
+		WHERE s.client_id = $1
+		  AND t.work_format_id = $2
+		  AND s.status = 'active'
+		  AND s.start_date <= $3
+		  AND s.end_date >= $3
+		  AND ($4::int IS NULL OR s.group_id IS NOT DISTINCT FROM $4)
+		ORDER BY s.id
+		LIMIT 1
+	`, *item.ClientID, item.WorkFormatID, item.SessionDate, item.GroupID).Scan(&serviceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: client has no matching active service", ErrInvalid)
+		}
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO session_enrollments (service_id, session_id, attended, comment)
+		VALUES ($1, $2, false, NULL)
+		ON CONFLICT (service_id, session_id) DO NOTHING
+	`, serviceID, item.ID)
+	return err
 }
 
 func (r *Repository) UpdateHeld(ctx context.Context, id int, wasHeld bool) error {

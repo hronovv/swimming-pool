@@ -17,6 +17,7 @@ type UserRepository interface {
 	GetByLogin(ctx context.Context, login string) (User, error)
 	Create(ctx context.Context, user User, profile Profile) (User, error)
 	Update(ctx context.Context, user User) error
+	UpdateWithProfile(ctx context.Context, user User, profile Profile) error
 	ChangeRole(ctx context.Context, user User, profile Profile) error
 	Card(ctx context.Context, userID int) (clientID int, trainerID int, err error)
 	UpdateStatus(ctx context.Context, id int, status string) error
@@ -61,10 +62,10 @@ func (s *Service) Authenticate(ctx context.Context, login, password string) (Use
 		return User{}, err
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
-		return User{}, ErrUnauthorized
+		return u, ErrUnauthorized
 	}
 	if u.Status == StatusBlocked {
-		return User{}, ErrBlocked
+		return u, ErrBlocked
 	}
 	return u, nil
 }
@@ -100,7 +101,14 @@ func (s *Service) Update(ctx context.Context, id int, in UserUpdate) error {
 	}
 	u.ID = id
 	if existing.Role == u.Role {
-		return s.repo.Update(ctx, u)
+		if u.Role == RoleAdmin {
+			return s.repo.Update(ctx, u)
+		}
+		profile, err := prepareProfile(u.Role, in.Profile)
+		if err != nil {
+			return err
+		}
+		return s.repo.UpdateWithProfile(ctx, u, profile)
 	}
 	profile, err := prepareProfile(u.Role, in.Profile)
 	if err != nil {

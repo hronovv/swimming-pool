@@ -30,6 +30,16 @@ type Group struct {
 	Status    string    `db:"status"`
 }
 
+type Member struct {
+	ClientID      int    `db:"client_id"`
+	Login         string `db:"login"`
+	LastName      string `db:"last_name"`
+	FirstName     string `db:"first_name"`
+	Patronymic    *string `db:"patronymic"`
+	ServiceID     int    `db:"service_id"`
+	ServiceStatus string `db:"service_status"`
+}
+
 type Filter struct {
 	Status string
 }

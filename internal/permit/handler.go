@@ -16,6 +16,7 @@ import (
 type PermitService interface {
 	GetAll(ctx context.Context, filter Filter) ([]Permit, error)
 	Create(ctx context.Context, item Permit) (Permit, error)
+	Update(ctx context.Context, trainerID, workFormatID int, item Permit) error
 	TrainerIDByUser(ctx context.Context, userID int) (int, error)
 }
 
@@ -30,6 +31,7 @@ func NewHandler(service PermitService) *Handler {
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/permits/", h.GetAll)
 	r.POST("/permits/", h.Create)
+	r.PUT("/permits/:trainer_id/:work_format_id", h.Update)
 }
 
 type PermitRequest struct {
@@ -80,34 +82,71 @@ func (h *Handler) GetAll(c *gin.Context) {
 }
 
 func (h *Handler) Create(c *gin.Context) {
-	var req PermitRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Status(http.StatusBadRequest)
-		return
-	}
-	issuedOn, ok := parseDate(c, "issued_on", req.IssuedOn, true)
+	item, ok := parsePermit(c)
 	if !ok {
 		return
 	}
-	var expiresOn *time.Time
-	if strings.TrimSpace(req.ExpiresOn) != "" {
-		expires, valid := parseDate(c, "expires_on", req.ExpiresOn, true)
-		if !valid {
-			return
-		}
-		expiresOn = &expires
-	}
-	created, err := h.service.Create(c.Request.Context(), Permit{
-		TrainerID:    req.TrainerID,
-		WorkFormatID: req.WorkFormatID,
-		IssuedOn:     issuedOn,
-		ExpiresOn:    expiresOn,
-	})
+	created, err := h.service.Create(c.Request.Context(), item)
 	if err != nil {
 		writePermitError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, toPermitResponse(created))
+}
+
+func (h *Handler) Update(c *gin.Context) {
+	trainerID, ok := parseID(c, "trainer_id")
+	if !ok {
+		return
+	}
+	formatID, ok := parseID(c, "work_format_id")
+	if !ok {
+		return
+	}
+	item, ok := parsePermit(c)
+	if !ok {
+		return
+	}
+	if err := h.service.Update(c.Request.Context(), trainerID, formatID, item); err != nil {
+		writePermitError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func parsePermit(c *gin.Context) (Permit, bool) {
+	var req PermitRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Status(http.StatusBadRequest)
+		return Permit{}, false
+	}
+	issuedOn, ok := parseDate(c, "issued_on", req.IssuedOn, true)
+	if !ok {
+		return Permit{}, false
+	}
+	var expiresOn *time.Time
+	if strings.TrimSpace(req.ExpiresOn) != "" {
+		expires, valid := parseDate(c, "expires_on", req.ExpiresOn, true)
+		if !valid {
+			return Permit{}, false
+		}
+		expiresOn = &expires
+	}
+	return Permit{
+		TrainerID:    req.TrainerID,
+		WorkFormatID: req.WorkFormatID,
+		IssuedOn:     issuedOn,
+		ExpiresOn:    expiresOn,
+	}, true
+}
+
+func parseID(c *gin.Context, name string) (int, bool) {
+	id, err := strconv.Atoi(c.Param(name))
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return 0, false
+	}
+	return id, true
 }
 
 func parseDate(c *gin.Context, field, raw string, required bool) (time.Time, bool) {
@@ -156,6 +195,8 @@ func writePermitError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrInvalid):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "permit not found"})
 	case errors.Is(err, ErrConflict):
 		c.JSON(http.StatusConflict, gin.H{"error": "permit already exists"})
 	case errors.Is(err, ErrTrainerNotFound):

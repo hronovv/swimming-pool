@@ -242,6 +242,42 @@ func cardInUse(err error, message string) error {
 	return fmt.Errorf("delete profile card: %w", err)
 }
 
+func (r *Repository) UpdateWithProfile(ctx context.Context, user User, profile Profile) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin user profile update: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := updateUser(ctx, tx, user); err != nil {
+		return err
+	}
+	switch user.Role {
+	case RoleClient:
+		var address *string
+		if profile.Address != "" {
+			address = &profile.Address
+		}
+		_, err = tx.Exec(ctx, `
+			UPDATE clients
+			SET passport = $2, birth_date = $3, address = $4, medical_certificate = $5
+			WHERE user_id = $1
+		`, user.ID, profile.Passport, profile.BirthDate, address, profile.MedicalCertificate)
+	case RoleTrainer:
+		_, err = tx.Exec(ctx, `
+			UPDATE trainers
+			SET qualification = $2, rank = $3, experience_years = $4, specialization = $5
+			WHERE user_id = $1
+		`, user.ID, profile.Qualification, profile.Rank, profile.ExperienceYears, profile.Specialization)
+	}
+	if err != nil {
+		return mapRepoErr(err, "update user profile")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit user profile update: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) Update(ctx context.Context, user User) error {
 	sqlQuery := `
 		UPDATE users

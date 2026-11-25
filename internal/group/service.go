@@ -10,6 +10,7 @@ import (
 type GroupRepository interface {
 	GetAll(ctx context.Context, filter Filter) ([]Group, error)
 	GetByID(ctx context.Context, ID int) (Group, error)
+	Members(ctx context.Context, groupID int) ([]Member, error)
 	Create(ctx context.Context, group Group) (Group, error)
 	Update(ctx context.Context, group Group) error
 	UpdateStatus(ctx context.Context, id int, status string) error
@@ -37,6 +38,16 @@ func (s *Service) GetByID(ctx context.Context, ID int) (Group, error) {
 		return Group{}, fmt.Errorf("%w: id is required", ErrInvalid)
 	}
 	return s.repo.GetByID(ctx, ID)
+}
+
+func (s *Service) Members(ctx context.Context, groupID int) ([]Member, error) {
+	if groupID <= 0 {
+		return nil, fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	if _, err := s.repo.GetByID(ctx, groupID); err != nil {
+		return nil, err
+	}
+	return s.repo.Members(ctx, groupID)
 }
 
 func (s *Service) Create(ctx context.Context, group Group) (Group, error) {

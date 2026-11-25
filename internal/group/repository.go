@@ -19,6 +19,22 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	}
 }
 
+func (r *Repository) Members(ctx context.Context, groupID int) ([]Member, error) {
+	sqlQuery := `
+		SELECT
+		v.client_id, v.login, v.last_name, v.first_name, v.patronymic,
+		v.service_id, v.service_status
+		FROM v_client_groups v
+		WHERE v.group_id = $1
+		ORDER BY v.last_name, v.first_name, v.service_id;
+	`
+	rows, err := r.db.Query(ctx, sqlQuery, groupID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[Member])
+}
+
 func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Group, error) {
 	sqlQuery := `
 		SELECT

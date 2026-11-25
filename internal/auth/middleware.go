@@ -1,14 +1,18 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"pool/internal/user"
 )
+
+const ctxRequestBody = "request_body"
 
 const ctxUser = "auth_user"
 
@@ -29,6 +33,7 @@ func RequireUser(users UserStore, issuer *Issuer, after ...func(*gin.Context)) g
 		"/api/v1/logout":  {},
 	}
 	return func(c *gin.Context) {
+		captureBody(c)
 		if _, ok := public[c.Request.URL.Path]; ok {
 			c.Next()
 			finish(done, c)
@@ -55,13 +60,15 @@ func RequireUser(users UserStore, issuer *Issuer, after ...func(*gin.Context)) g
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 			return
 		}
+		c.Set(ctxUser, u)
 		if u.Status == user.StatusBlocked {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user is blocked"})
+			finish(done, c)
 			return
 		}
-		c.Set(ctxUser, u)
 		if !allowed(c.Request.Method, c.Request.URL.Path, u.Role) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			finish(done, c)
 			return
 		}
 		c.Next()
@@ -77,6 +84,34 @@ func finish(done func(*gin.Context), c *gin.Context) {
 	if done != nil {
 		done(c)
 	}
+}
+
+func captureBody(c *gin.Context) {
+	if c.Request == nil || c.Request.Body == nil {
+		return
+	}
+	switch c.Request.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+	default:
+		return
+	}
+	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, 8192))
+	_ = c.Request.Body.Close()
+	if err != nil {
+		c.Request.Body = io.NopCloser(bytes.NewReader(nil))
+		return
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	c.Set(ctxRequestBody, raw)
+}
+
+func RequestBody(c *gin.Context) []byte {
+	v, ok := c.Get(ctxRequestBody)
+	if !ok {
+		return nil
+	}
+	raw, _ := v.([]byte)
+	return raw
 }
 
 func allowed(method, path, role string) bool {

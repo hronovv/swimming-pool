@@ -15,6 +15,7 @@ func (s *stubRepo) GetAll(context.Context, Filter) ([]Group, error) { return nil
 func (s *stubRepo) GetByID(context.Context, int) (Group, error) {
 	return Group{}, ErrNotFound
 }
+func (s *stubRepo) Members(context.Context, int) ([]Member, error) { return nil, nil }
 func (s *stubRepo) Create(_ context.Context, group Group) (Group, error) {
 	s.created = group
 	group.ID = 31

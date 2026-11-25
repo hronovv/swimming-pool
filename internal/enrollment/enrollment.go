@@ -20,6 +20,7 @@ type Enrollment struct {
 	SessionID   int     `db:"session_id"`
 	Attended    bool    `db:"attended"`
 	Comment     *string `db:"comment"`
+	ClientID    int     `db:"client_id"`
 	ClientName  string  `db:"client_name"`
 	TariffName  string  `db:"tariff_name"`
 	ActorUserID int     `db:"-"`

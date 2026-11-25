@@ -23,18 +23,14 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Model, error) {
 	sqlQuery := `
 		SELECT
-		s.id, s.client_id, s.tariff_id, s.group_id, s.start_date, s.end_date, s.status,
-		` + personNameSQL + ` AS client_name, t.name AS tariff_name, t.work_format_id, g.name AS group_name
-		FROM services s
-		JOIN clients c ON c.id = s.client_id
-		JOIN users u ON u.id = c.user_id
-		JOIN tariffs t ON t.id = s.tariff_id
-		LEFT JOIN training_groups g ON g.id = s.group_id
-		WHERE ($1 = 0 OR s.client_id = $1)
-		  AND ($2 = 0 OR s.tariff_id = $2)
-		  AND ($3 = 0 OR s.group_id = $3)
-		  AND ($4 = '' OR s.status = $4)
-		ORDER BY s.id;
+		v.service_id AS id, v.client_id, v.tariff_id, v.group_id, v.start_date, v.end_date, v.status,
+		` + viewPersonNameSQL + ` AS client_name, v.tariff_name, v.work_format_id, v.group_name
+		FROM v_services v
+		WHERE ($1 = 0 OR v.client_id = $1)
+		  AND ($2 = 0 OR v.tariff_id = $2)
+		  AND ($3 = 0 OR v.group_id = $3)
+		  AND ($4 = '' OR v.status = $4)
+		ORDER BY v.service_id;
 	`
 
 	rows, err := r.db.Query(ctx, sqlQuery, filter.ClientID, filter.TariffID, filter.GroupID, filter.Status)
@@ -53,14 +49,10 @@ func (r *Repository) GetAll(ctx context.Context, filter Filter) ([]Model, error)
 func (r *Repository) GetByID(ctx context.Context, ID int) (Model, error) {
 	sqlQuery := `
 		SELECT
-		s.id, s.client_id, s.tariff_id, s.group_id, s.start_date, s.end_date, s.status,
-		` + personNameSQL + ` AS client_name, t.name AS tariff_name, t.work_format_id, g.name AS group_name
-		FROM services s
-		JOIN clients c ON c.id = s.client_id
-		JOIN users u ON u.id = c.user_id
-		JOIN tariffs t ON t.id = s.tariff_id
-		LEFT JOIN training_groups g ON g.id = s.group_id
-		WHERE s.id = $1;
+		v.service_id AS id, v.client_id, v.tariff_id, v.group_id, v.start_date, v.end_date, v.status,
+		` + viewPersonNameSQL + ` AS client_name, v.tariff_name, v.work_format_id, v.group_name
+		FROM v_services v
+		WHERE v.service_id = $1;
 	`
 
 	rows, err := r.db.Query(ctx, sqlQuery, ID)
@@ -99,6 +91,7 @@ func (r *Repository) Create(ctx context.Context, model Model) (Model, error) {
 	if err != nil {
 		return Model{}, mapRepoErr(err, "failed to create service")
 	}
+	_, _ = r.db.Exec(ctx, `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_tariff_stats`)
 	return model, nil
 }
 
@@ -152,7 +145,7 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int, status string) er
 	return nil
 }
 
-const personNameSQL = `trim(u.last_name || ' ' || left(u.first_name, 1) || '.' || CASE WHEN coalesce(u.patronymic, '') = '' THEN '' ELSE ' ' || left(u.patronymic, 1) || '.' END)`
+const viewPersonNameSQL = `trim(v.last_name || ' ' || left(v.first_name, 1) || '.' || CASE WHEN coalesce(v.patronymic, '') = '' THEN '' ELSE ' ' || left(v.patronymic, 1) || '.' END)`
 
 func (r *Repository) MedicalCertificate(ctx context.Context, clientID int) (bool, error) {
 	var allowed bool

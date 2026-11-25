@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body class="theme-light">
+  <script>document.body.className = localStorage.getItem("theme") === "dark" ? "theme-dark" : "theme-light";</script>
   <div id="app"></div>
   <script src="/static/app.js"></script>
 </body>

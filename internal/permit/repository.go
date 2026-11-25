@@ -56,6 +56,22 @@ func (r *Repository) Create(ctx context.Context, item Permit) (Permit, error) {
 	return item, nil
 }
 
+func (r *Repository) Update(ctx context.Context, trainerID, workFormatID int, item Permit) error {
+	sqlQuery := `
+		UPDATE trainer_permits
+		SET trainer_id = $3, work_format_id = $4, issued_on = $5, expires_on = $6
+		WHERE trainer_id = $1 AND work_format_id = $2
+	`
+	tag, err := r.db.Exec(ctx, sqlQuery, trainerID, workFormatID, item.TrainerID, item.WorkFormatID, item.IssuedOn, item.ExpiresOn)
+	if err != nil {
+		return mapRepoErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func mapRepoErr(err error) error {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {

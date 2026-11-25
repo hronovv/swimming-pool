@@ -122,6 +122,7 @@ const ERRORS = {
   "duration_days must be greater than 0": "Срок должен быть больше 0 дней",
   "sport_pass must have price 0 and no visit limit": "У спорт-пасса цена 0 и нет лимита визитов",
   "client_id is required": "Выберите клиента",
+  "client has no matching active service": "У клиента нет активной услуги этого формата на дату занятия",
   "tariff_id is required": "Выберите тариф",
   "group_id is required for group and sport tariffs": "Для группы и спорта нужна группа",
   "group_id is only allowed for group and sport tariffs": "Группа только у группового и спортивного тарифа",
@@ -282,6 +283,13 @@ function pager(total, pages) {
 function formBtns() {
   return `<div class="wide"><button type="button" class="btn" data-act="save">Сохранить</button> <button type="button" class="btn-line" data-form="off">Отмена</button></div>`;
 }
+function rowEdit(id, extra) {
+  if (me.role !== "admin" || id == null || id === "") return "";
+  return ` class="row-edit" data-act="edit" data-id="${esc(String(id))}"${extra || ""}`;
+}
+function dictOptions(dict, current) {
+  return Object.entries(dict).map(([code, label]) => `<option value="${esc(code)}"${String(current ?? "") === String(code) ? " selected" : ""}>${esc(label)}</option>`).join("");
+}
 function searchBar(placeholder) {
   const add = (ADDABLE[me.role] || []).includes(page) && !(page === "users" && people !== "accounts");
   return `<div class="toolbar">
@@ -289,12 +297,71 @@ function searchBar(placeholder) {
     ${add ? `<button type="button" class="btn" data-form="new">Добавить</button>` : ""}
   </div>`;
 }
-function options(items, value, label, blank) {
+function options(items, value, label, blank, current) {
+  const cur = current == null ? "" : String(current);
   const head = blank == null ? "" : `<option value="">${esc(blank)}</option>`;
-  return head + items.map((item) => `<option value="${esc(value(item))}">${esc(label(item))}</option>`).join("");
+  return head + items.map((item) => {
+    const val = String(value(item));
+    return `<option value="${esc(val)}"${val === cur ? " selected" : ""}>${esc(label(item))}</option>`;
+  }).join("");
 }
-function select(name, items, value, label, blank) {
-  return `<select name="${name}">${options(items, value, label, blank)}</select>`;
+function select(name, items, value, label, blank, current) {
+  return `<select name="${name}">${options(items, value, label, blank, current)}</select>`;
+}
+function searchSelect(name, items, value, label, current, extra) {
+  extra = extra || (() => ({}));
+  const rows = items.map((item) => Object.assign({
+    value: String(value(item)),
+    label: String(label(item)),
+  }, extra(item) || {}));
+  const cur = rows.find((row) => row.value === String(current ?? ""));
+  return `<div class="pick" data-rows="${esc(JSON.stringify(rows))}">
+    <input type="hidden" name="${name}" value="${cur ? esc(cur.value) : ""}" />
+    <input class="pick-q" type="text" autocomplete="off" placeholder="поиск" value="${esc(cur ? cur.label : "")}" />
+    <div class="pick-list" hidden></div>
+  </div>`;
+}
+function pickRows(box) {
+  try {
+    return JSON.parse(box.dataset.rows || "[]");
+  } catch {
+    return [];
+  }
+}
+function filterPick(box) {
+  const query = box.querySelector(".pick-q").value.trim().toLowerCase();
+  const list = box.querySelector(".pick-list");
+  if (query.length < 1) {
+    list.hidden = true;
+    list.replaceChildren();
+    return;
+  }
+  const hits = pickRows(box).filter((row) => {
+    if (row.blocked) return false;
+    return row.label.toLowerCase().includes(query);
+  }).slice(0, 20);
+  list.innerHTML = hits.map((row) => `<div class="pick-item" data-value="${esc(row.value)}" data-label="${esc(row.label)}">${esc(row.label)}</div>`).join("");
+  list.hidden = hits.length === 0;
+}
+function choosePick(item) {
+  const box = item.closest(".pick");
+  box.querySelector("input[type=hidden]").value = item.dataset.value;
+  box.querySelector(".pick-q").value = item.dataset.label;
+  const list = box.querySelector(".pick-list");
+  list.hidden = true;
+  list.replaceChildren();
+}
+function closePicks(inside) {
+  document.querySelectorAll(".pick-list").forEach((list) => {
+    if (!inside || !list.parentElement.contains(inside)) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
+  });
+}
+function isoDate(value) {
+  const match = String(value || "").match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : "";
 }
 
 let refreshing = null;
@@ -386,38 +453,37 @@ function loginPage() {
 
 async function servicesPage() {
   const data = await refs();
-  let rows = await load("services", "/services/");
-  rows = rows.filter((row) => hit([
+  const all = await load("services", "/services/");
+  const rows = all.filter((row) => hit([
     row.id, row.client_name, row.tariff_name, row.group_name,
     SERVICE_STATUS[row.status], row.start_date, row.end_date,
   ]));
-  const heads = ["№", "Клиент", "Тариф", "Группа", "Статус", "Срок"].concat(me.role === "admin" ? [""] : []);
-  return `<h2>${me.role === "client" ? "Мои услуги" : "Услуги"}</h2>
-    ${searchBar("Поиск: клиент, тариф, группа")}
-    ${form === "new" && me.role === "admin" ? `<div class="form-grid">
-      <div><label>Клиент</label>${select("client_id", data.clients, (item) => item.id, (item) => item.name || clientName(data, item.id))}</div>
-      <div><label>Тариф</label>${select("tariff_id", data.tariffs, (item) => item.id, (item) => item.name)}</div>
-      <div><label>Группа</label>${select("group_id", data.groups, (item) => item.id, (item) => item.name, "—")}</div>
-      <div><label>Начало</label><input name="start_date" type="date" value="${today()}" /></div>
-      ${formBtns()}
-    </div>` : ""}
-    ${tbl(heads, rows.map((row) => `<tr>
-      <td>${row.id}</td><td class="name">${esc(textName(row.client_name))}</td>
-      <td>${esc(textName(row.tariff_name))}</td><td>${esc(textName(row.group_name))}</td>
+  const editing = typeof form === "number" ? all.find((row) => row.id === form) : null;
+  const own = me.role === "client";
+  const heads = ["№"].concat(own ? [] : ["Клиент"]).concat(["Тариф", "Группа", "Статус", "Срок"]);
+  return `<h2>${own ? "Мои услуги" : "Услуги"}</h2>
+    ${searchBar(own ? "Поиск: тариф, группа" : "Поиск: клиент, тариф, группа")}
+    ${me.role === "admin" && (form === "new" || editing) ? serviceForm(data, editing) : ""}
+    ${tbl(heads, rows.map((row) => `<tr${rowEdit(row.id)}>
+      <td>${row.id}</td>
+      ${own ? "" : `<td class="name">${esc(textName(row.client_name))}</td>`}
+      <td class="${own ? "name" : ""}">${esc(textName(row.tariff_name))}</td><td>${esc(textName(row.group_name))}</td>
       <td>${tag(SERVICE_STATUS[row.status] || row.status, row.status === "frozen")}</td>
       <td>${esc(row.start_date)} — ${esc(row.end_date)}</td>
-      ${me.role === "admin" ? `<td class="row-actions">${serviceActions(row)}</td>` : ""}
     </tr>`))}`;
 }
-function serviceActions(row) {
-  if (row.status === "closed") return "";
-  const links = [];
-  if (row.status === "active") links.push(statusLink(`/services/${row.id}/status`, "frozen", "services", "заморозить"));
-  if (row.status === "frozen") links.push(statusLink(`/services/${row.id}/status`, "active", "services", "активировать"));
-  links.push(statusLink(`/services/${row.id}/status`, "closed", "services", "закрыть"));
-  return links.join("");
+function serviceForm(data, row) {
+  const clientLabel = (item) => item.name || clientName(data, item.id);
+  return `<div class="form-grid">
+    <div><label>Клиент</label>${searchSelect("client_id", data.clients, (item) => item.id, clientLabel, row?.client_id)}</div>
+    <div><label>Тариф</label>${select("tariff_id", data.tariffs, (item) => item.id, (item) => item.name, null, row?.tariff_id)}</div>
+    <div><label>Группа</label>${select("group_id", data.groups, (item) => item.id, (item) => item.name, "—", row?.group_id)}</div>
+    <div><label>Начало</label><input name="start_date" type="date" value="${row ? isoDate(row.start_date) : today()}" /></div>
+    ${row ? `<div><label>Конец</label><input name="end_date" type="date" value="${isoDate(row.end_date)}" /></div>
+      <div><label>Статус</label><select name="status">${Object.entries(SERVICE_STATUS).map(([code, label]) => `<option value="${code}"${row.status === code ? " selected" : ""}>${label}</option>`).join("")}</select></div>` : ""}
+    ${formBtns()}
+  </div>`;
 }
-
 async function paymentsPage() {
   const data = await refs();
   const services = me.role === "admin" ? await load("services:all", "/services/") : [];
@@ -427,44 +493,49 @@ async function paymentsPage() {
     row.client_name, `услуга ${row.service_id}`, money(row.amount),
     row.paid_on, METHOD[row.method], row.purpose, PAY_STATUS[row.status],
   ]));
+  const own = me.role === "client";
+  const editing = typeof form === "number" ? rows.find((row) => row.id === form) : null;
   return `<h2>Платежи</h2>
-    ${searchBar("Поиск: клиент, сумма, назначение")}
-    ${form === "new" && me.role === "admin" ? `<div class="form-grid">
-      <div><label>Услуга</label>${select("service_id", payable, (item) => item.id, (item) => `${item.id} — ${item.client_name || clientName(data, item.client_id)}`)}</div>
-      <div><label>Сумма</label><input name="amount" value="12.00" /></div>
-      <div><label>Способ</label><select name="method">${Object.entries(METHOD).map(([code, label]) => `<option value="${code}"${code === "card" ? " selected" : ""}>${label}</option>`).join("")}</select></div>
-      <div><label>Статус</label><select name="status">${Object.entries(PAY_STATUS).map(([code, label]) => `<option value="${code}"${code === "completed" ? " selected" : ""}>${label}</option>`).join("")}</select></div>
-      <div><label>Назначение</label><input name="purpose" value="Оплата тарифа" /></div>
-      ${formBtns()}
-    </div>` : ""}
-    ${tbl(["Клиент", "Услуга", "Сумма", "Дата", "Способ", "Назначение", "Статус"].concat(me.role === "admin" ? [""] : []),
-      rows.map((row) => {
-        return `<tr>
-          <td class="name">${esc(textName(row.client_name))}</td>
-          <td>услуга ${row.service_id}</td><td class="money">${money(row.amount)}</td>
+    ${searchBar(own ? "Поиск: сумма, назначение" : "Поиск: клиент, сумма, назначение")}
+    ${me.role === "admin" && (form === "new" || editing) ? paymentForm(payable, data, editing) : ""}
+    ${tbl((own ? [] : ["Клиент"]).concat(["Услуга", "Сумма", "Дата", "Способ", "Назначение", "Статус"]),
+      rows.map((row) => `<tr${rowEdit(row.id)}>
+          ${own ? "" : `<td class="name">${esc(textName(row.client_name))}</td>`}
+          <td class="${own ? "name" : ""}">услуга ${row.service_id}</td><td class="money">${money(row.amount)}</td>
           <td>${esc(row.paid_on)}</td><td>${esc(METHOD[row.method] || row.method)}</td>
           <td>${esc(dash(row.purpose))}</td>
           <td>${tag(PAY_STATUS[row.status] || row.status, row.status !== "completed")}</td>
-          ${me.role === "admin" ? `<td class="row-actions">${paymentActions(row)}</td>` : ""}
-        </tr>`;
-      }))}`;
+        </tr>`))}`;
 }
-function paymentActions(row) {
-  if (row.status !== "pending") return "";
-  return statusLink(`/payments/${row.id}/status`, "completed", "payments", "провести")
-    + statusLink(`/payments/${row.id}/status`, "cancelled", "payments", "отменить");
+function paymentForm(payable, data, row) {
+  const label = (item) => `${item.client_name || clientName(data, item.client_id)} · ${item.tariff_name || "услуга " + item.id}`;
+  return `<div class="form-grid">
+      <div><label>Клиент, услуга</label>${searchSelect("service_id", payable, (item) => item.id, label, row?.service_id)}</div>
+      <div><label>Сумма</label><input name="amount" value="${esc(row ? String(row.amount) : "12.00")}" /></div>
+      <div><label>Способ</label><select name="method">${dictOptions(METHOD, row?.method || "card")}</select></div>
+      <div><label>Статус</label><select name="status">${dictOptions(PAY_STATUS, row?.status || "completed")}</select></div>
+      <div><label>Дата</label><input name="paid_on" type="date" value="${row ? isoDate(row.paid_on) : today()}" /></div>
+      <div><label>Назначение</label><input name="purpose" value="${esc(row?.purpose || "Оплата тарифа")}" /></div>
+      ${formBtns()}
+    </div>`;
 }
 
 async function sessionsPage() {
   const data = await refs();
   let rows = await load("sessions", "/sessions/");
-  const trainer = myTrainer();
-  if (me.role === "trainer") rows = rows.filter((row) => trainer && row.trainer_ids.includes(trainer.id));
   let ownServices = [];
+  let enrolledIDs = new Set();
+  let currentClient = null;
   if (me.role === "client") {
     ownServices = await load("services:mine", "/services/");
-    const groups = new Set(ownServices.map((item) => item.group_id).filter(Boolean));
-    rows = rows.filter((row) => row.work_format_id === 1 || (row.group_id && groups.has(row.group_id)));
+    const enrolled = await load("enrollments", "/enrollments/");
+    enrolledIDs = new Set(enrolled.map((item) => item.session_id));
+  }
+  if (me.role === "admin") {
+    const enrolled = await load("enrollments", "/enrollments/");
+    const editingID = typeof form === "number" ? form : 0;
+    const enroll = enrolled.find((item) => item.session_id === editingID);
+    currentClient = enroll ? enroll.client_id : null;
   }
   const listed = rows.slice();
   rows = rows.filter((row) => hit([
@@ -473,22 +544,13 @@ async function sessionsPage() {
     row.was_held ? "проведено" : "запланировано",
   ]));
   const booking = bookID ? bookForm(listed, ownServices) : "";
+  const editing = typeof form === "number" ? listed.find((row) => row.id === form) : null;
   return `<h2>${me.role === "trainer" ? "Расписание" : "Занятия"}</h2>
     ${searchBar("Поиск: дата, формат, дорожка")}
-    ${form === "new" && me.role === "admin" ? `<div class="form-grid">
-      <div><label>Дата</label><input name="session_date" type="date" value="${today()}" /></div>
-      <div><label>Начало</label><input name="start_time" value="09:00" /></div>
-      <div><label>Конец</label><input name="end_time" value="09:45" /></div>
-      <div><label>Формат</label><select name="work_format_id">${Object.entries(WORK).map(([code, label]) => `<option value="${code}">${label}</option>`).join("")}</select></div>
-      <div><label>Дорожка</label>${select("lane_id", data.lanes, (item) => item.id, (item) => item.name, "—")}</div>
-      <div><label>Группа</label>${select("group_id", data.groups, (item) => item.id, (item) => item.name, "—")}</div>
-      <div><label>Тема</label><input name="topic" /></div>
-      <div><label>Тренер</label>${select("trainer_id", data.trainers, (item) => item.id, (item) => trainerName(data, item.id), "—")}</div>
-      ${formBtns()}
-    </div>` : ""}
+    ${me.role === "admin" && (form === "new" || editing) ? sessionForm(data, editing, currentClient) : ""}
     ${booking}
-    ${tbl(["Дата", "Время", "Формат", "Группа", "Дорожка", "Тема", "Тренер", "Статус"].concat(me.role === "client" || me.role === "admin" ? [""] : []),
-      rows.map((row) => `<tr>
+    ${tbl(["Дата", "Время", "Формат", "Группа", "Дорожка", "Тема", "Тренер", "Статус"].concat(me.role === "client" ? [""] : []),
+      rows.map((row) => `<tr${rowEdit(row.id)}>
         <td class="name">${esc(row.session_date)}</td>
         <td>${esc(row.start_time)}–${esc(row.end_time)}</td>
         <td>${esc(WORK[row.work_format_id] || row.work_format_id)}</td>
@@ -497,9 +559,31 @@ async function sessionsPage() {
         <td>${esc(dash(row.topic))}</td>
         <td>${esc((row.trainer_names || []).length ? row.trainer_names.join(", ") : "—")}</td>
         <td>${tag(row.was_held ? "проведено" : "запланировано")}</td>
-        ${me.role === "admin" ? `<td class="row-actions"><a href="#" data-act="held" data-path="/sessions/${row.id}/held" data-held="${row.was_held ? "0" : "1"}">${row.was_held ? "отменить" : "провести"}</a></td>` : ""}
-        ${me.role === "client" ? `<td class="row-actions"><a href="#" data-act="book" data-id="${row.id}">записаться</a></td>` : ""}
+        ${me.role === "client" && !enrolledIDs.has(row.id) ? `<td class="row-actions"><a href="#" data-act="book" data-id="${row.id}">записаться</a></td>` : me.role === "client" ? "<td></td>" : ""}
       </tr>`))}`;
+}
+function sessionForm(data, row, clientID) {
+  const format = row?.work_format_id || 1;
+  const clientLabel = (item) => item.name || clientName(data, item.id);
+  return `<div class="form-grid">
+      <div><label>Дата</label><input name="session_date" type="date" value="${row ? isoDate(row.session_date) : today()}" /></div>
+      <div><label>Начало</label><input name="start_time" value="${esc(row?.start_time || "09:00")}" /></div>
+      <div><label>Конец</label><input name="end_time" value="${esc(row?.end_time || "09:45")}" /></div>
+      <div><label>Формат</label><select name="work_format_id">${dictOptions(WORK, format)}</select></div>
+      <div><label>Дорожка</label>${select("lane_id", data.lanes, (item) => item.id, (item) => item.name, "—", row?.lane_id)}</div>
+      <div><label>Группа</label>${select("group_id", data.groups, (item) => item.id, (item) => item.name, "—", row?.group_id)}</div>
+      <div data-session-client><label>Клиент</label>${searchSelect("client_id", data.clients, (item) => item.id, clientLabel, clientID)}</div>
+      <div><label>Тема</label><input name="topic" value="${esc(row?.topic || "")}" /></div>
+      <div><label>Тренер</label>${select("trainer_id", data.trainers, (item) => item.id, (item) => trainerName(data, item.id), "—", row?.trainer_ids?.[0])}</div>
+      ${row ? `<div><label>Статус</label><select name="was_held"><option value="true"${row.was_held ? " selected" : ""}>проведено</option><option value="false"${row.was_held ? "" : " selected"}>запланировано</option></select></div>` : ""}
+      ${formBtns()}
+    </div>`;
+}
+function showSessionClient() {
+  const field = document.querySelector("[name=work_format_id]");
+  const box = document.querySelector("[data-session-client]");
+  if (!field || !box) return;
+  box.hidden = num(field.value) > 2;
 }
 function bookForm(rows, services) {
   const session = rows.find((row) => row.id === bookID);
@@ -537,26 +621,37 @@ async function enrollmentsPage() {
       row.attended ? "был" : "не был", row.comment,
     ]);
   });
+  const editingKey = typeof form === "string" && form !== "new" ? form : "";
+  const editing = editingKey ? rows.find((row) => `${row.service_id}/${row.session_id}` === editingKey) : null;
   return `<h2>Явка</h2>
     ${searchBar("Поиск: клиент, занятие")}
     ${form === "new" && me.role === "admin" ? `<div class="form-grid">
       <div><label>Занятие</label><select name="session_id">${options(sessions, (item) => item.id, (item) => sessionLabel(item))}</select></div>
-      <div><label>Услуга</label><select name="service_id">${services.map((item) => {
-        return `<option value="${item.id}" data-format="${item.work_format_id || ""}" data-group="${item.group_id || ""}">${esc(item.id + " — " + (item.client_name || clientName(data, item.client_id)))}</option>`;
-      }).join("")}</select></div>
+      <div><label>Клиент, услуга</label>${searchSelect(
+        "service_id",
+        services,
+        (item) => item.id,
+        (item) => `${item.client_name || clientName(data, item.client_id)} · ${item.tariff_name || "услуга " + item.id}`,
+        null,
+        (item) => ({ format: item.work_format_id || "", group: item.group_id || "" }),
+      )}</div>
       <div class="wide"><label>Комментарий</label><input name="comment" /></div>
       ${formBtns()}
     </div>` : ""}
-    ${tbl(["Занятие", "Клиент", "Тариф", "Явка", "Комментарий"].concat(me.role !== "client" ? [""] : []),
+    ${me.role === "admin" && editing ? `<div class="form-grid">
+      <div><label>Явка</label><select name="attended"><option value="true"${editing.attended ? " selected" : ""}>был</option><option value="false"${editing.attended ? "" : " selected"}>не был</option></select></div>
+      ${formBtns()}
+    </div>` : ""}
+    ${tbl(["Занятие", "Клиент", "Тариф", "Явка", "Комментарий"].concat(me.role === "trainer" ? [""] : []),
       rows.map((row) => {
         const session = sessionByID[row.session_id];
-        return `<tr>
+        return `<tr${rowEdit(`${row.service_id}/${row.session_id}`)}>
           <td class="name">${esc(sessionLabel(session))}</td>
           <td>${esc(textName(row.client_name))}</td>
           <td>${esc(textName(row.tariff_name))}</td>
           <td>${tag(row.attended ? "был" : "не был", !row.attended)}</td>
           <td>${esc(dash(row.comment))}</td>
-          ${me.role !== "client" ? `<td class="row-actions"><a href="#" data-act="attend" data-path="/enrollments/${row.service_id}/${row.session_id}" data-attended="${row.attended ? "0" : "1"}">${row.attended ? "снять явку" : "отметить явку"}</a></td>` : ""}
+          ${me.role === "trainer" ? `<td class="row-actions"><a href="#" data-act="attend" data-path="/enrollments/${row.service_id}/${row.session_id}" data-attended="${row.attended ? "0" : "1"}">${row.attended ? "снять явку" : "отметить явку"}</a></td>` : ""}
         </tr>`;
       }))}`;
 }
@@ -568,36 +663,44 @@ function sessionLabel(session) {
 async function standardsPage() {
   const data = await refs();
   const trainer = myTrainer();
-  let rows = await load("standards", "/standards/");
-  rows = rows.filter((row) => hit([
+  const all = await load("standards", "/standards/");
+  const rows = all.filter((row) => hit([
     row.client_name, row.trainer_name,
     STYLE[row.style], row.distance_m, row.held_on, row.result_time, OUTCOME[row.outcome], row.attempt_no,
   ]));
-  const trainerField = me.role === "trainer"
-    ? `<input type="hidden" name="trainer_id" value="${trainer ? trainer.id : ""}" />`
-    : `<div><label>Тренер</label>${select("trainer_id", data.trainers, (item) => item.id, (item) => trainerName(data, item.id))}</div>`;
+  const asClient = me.role === "client";
+  const asTrainer = me.role === "trainer";
+  const editing = typeof form === "number" ? all.find((row) => row.id === form) : null;
+  const heads = (asClient ? [] : ["Клиент"]).concat(asTrainer ? [] : ["Тренер"]).concat(["Стиль", "м", "Дата", "Время", "Итог", "Попытка"]);
   return `<h2>Нормативы</h2>
-    ${searchBar("Поиск: клиент, стиль")}
-    ${form === "new" ? `<div class="form-grid">
-      <div><label>Клиент</label>${select("client_id", data.clients, (item) => item.id, (item) => item.name || clientName(data, item.id))}</div>
-      ${trainerField}
-      <div><label>Стиль</label><select name="style">${Object.entries(STYLE).map(([code, label]) => `<option value="${code}">${label}</option>`).join("")}</select></div>
-      <div><label>Дистанция, м</label><select name="distance_m"><option>25</option><option>50</option><option>100</option><option>200</option><option>400</option></select></div>
-      <div><label>Дата</label><input name="held_on" type="date" value="${today()}" /></div>
-      <div><label>Результат</label><input name="result_time" placeholder="00:00:26" /></div>
-      <div><label>Итог</label><select name="outcome">${Object.entries(OUTCOME).map(([code, label]) => `<option value="${code}">${label}</option>`).join("")}</select></div>
-      <div><label>Попытка</label><input name="attempt_no" value="1" /></div>
-      ${formBtns()}
-    </div>` : ""}
-    ${tbl(["Клиент", "Тренер", "Стиль", "м", "Дата", "Время", "Итог", "Попытка"],
-      rows.map((row) => `<tr>
-        <td class="name">${esc(textName(row.client_name))}</td>
-        <td>${esc(textName(row.trainer_name))}</td>
+    ${searchBar(asClient ? "Поиск: стиль" : "Поиск: клиент, стиль")}
+    ${(form === "new" || editing) && me.role !== "client" ? standardForm(data, editing, trainer) : ""}
+    ${tbl(heads,
+      rows.map((row) => `<tr${rowEdit(row.id)}>
+        ${asClient ? "" : `<td class="name">${esc(textName(row.client_name))}</td>`}
+        ${asTrainer ? "" : `<td>${esc(textName(row.trainer_name))}</td>`}
         <td>${esc(STYLE[row.style] || row.style)}</td><td>${row.distance_m}</td>
         <td>${esc(row.held_on)}</td><td class="money">${esc(dash(row.result_time))}</td>
         <td>${tag(OUTCOME[row.outcome] || row.outcome, row.outcome === "failed")}</td>
         <td>${row.attempt_no}</td>
       </tr>`))}`;
+}
+function standardForm(data, row, trainer) {
+  const distances = [25, 50, 100, 200, 400].map((n) => `<option value="${n}"${Number(row?.distance_m) === n ? " selected" : ""}>${n}</option>`).join("");
+  const trainerField = me.role === "trainer"
+    ? `<input type="hidden" name="trainer_id" value="${trainer ? trainer.id : ""}" />`
+    : `<div><label>Тренер</label>${select("trainer_id", data.trainers, (item) => item.id, (item) => trainerName(data, item.id), null, row?.trainer_id)}</div>`;
+  return `<div class="form-grid">
+      <div><label>Клиент</label>${searchSelect("client_id", data.clients, (item) => item.id, (item) => item.name || clientName(data, item.id), row?.client_id)}</div>
+      ${trainerField}
+      <div><label>Стиль</label><select name="style">${dictOptions(STYLE, row?.style)}</select></div>
+      <div><label>Дистанция, м</label><select name="distance_m">${distances}</select></div>
+      <div><label>Дата</label><input name="held_on" type="date" value="${row ? isoDate(row.held_on) : today()}" /></div>
+      <div><label>Результат</label><input name="result_time" placeholder="00:00:26" value="${esc(row?.result_time || "")}" /></div>
+      <div><label>Итог</label><select name="outcome">${dictOptions(OUTCOME, row?.outcome)}</select></div>
+      <div><label>Попытка</label><input name="attempt_no" value="${esc(row ? String(row.attempt_no) : "1")}" /></div>
+      ${formBtns()}
+    </div>`;
 }
 
 async function usersPage() {
@@ -611,11 +714,10 @@ async function usersPage() {
     });
     return `<h2>Пользователи</h2>
       ${sub}${searchBar("Поиск: ФИО, паспорт")}
-      ${tbl(["ФИО", "Паспорт", "Рождение", "Адрес", "Медсправка", ""], rows.map((row) => `<tr>
+      ${tbl(["ФИО", "Паспорт", "Рождение", "Адрес", "Медсправка"], rows.map((row) => `<tr${rowEdit(row.user_id, ` data-people="accounts"`)}>
         <td class="name">${esc(row.name || personName(data.userByID[row.user_id]))}</td>
         <td>${esc(row.passport)}</td><td>${esc(row.birth_date)}</td><td>${esc(dash(row.address))}</td>
         <td>${tag(row.medical_certificate ? "есть" : "нет", !row.medical_certificate)}</td>
-        <td class="row-actions"><a href="#" data-act="medical" data-id="${row.id}" data-on="${row.medical_certificate ? "0" : "1"}">${row.medical_certificate ? "отозвать" : "справка есть"}</a></td>
       </tr>`))}`;
   }
   if (people === "trainers") {
@@ -629,7 +731,7 @@ async function usersPage() {
     ]));
     return `<h2>Пользователи</h2>
       ${sub}${searchBar("Поиск: ФИО, квалификация")}
-      ${tbl(["ФИО", "Квалификация", "Разряд", "Стаж", "Специализация", "Допуски"], rows.map((row) => `<tr>
+      ${tbl(["ФИО", "Квалификация", "Разряд", "Стаж", "Специализация", "Допуски"], rows.map((row) => `<tr${rowEdit(row.user_id, ` data-people="accounts"`)}>
         <td class="name">${esc(trainerName(data, row.id))}</td>
         <td>${esc(QUAL[row.qualification] || row.qualification)}</td>
         <td>${esc(RANK[row.rank] || row.rank)}</td>
@@ -639,103 +741,127 @@ async function usersPage() {
       </tr>`))}`;
   }
   const rows = data.users.filter((row) => hit([row.login, personName(row), row.role, row.phone, row.email, USER_STATUS[row.status]]));
+  const editing = typeof form === "number" ? data.users.find((row) => row.id === form) : null;
   return `<h2>Пользователи</h2>
     ${sub}${searchBar("Поиск: логин, фамилия")}
-    ${form === "new" ? `<div class="form-grid">
-      <div><label>Логин</label><input name="login" /></div>
-      <div><label>Пароль</label><input name="password" type="password" placeholder="не короче 8 символов" /></div>
-      <div><label>Роль</label><select name="role">${Object.entries(ROLE).map(([code, label]) => `<option value="${code}"${code === "client" ? " selected" : ""}>${label}</option>`).join("")}</select></div>
-      <div><label>Фамилия</label><input name="last_name" /></div>
-      <div><label>Имя</label><input name="first_name" /></div>
-      <div><label>Отчество</label><input name="patronymic" /></div>
-      <div><label>Телефон</label><input name="phone" /></div>
-      <div><label>Почта</label><input name="email" /></div>
-      ${profileFields()}
-      ${formBtns()}
-    </div>` : ""}
-    ${tbl(["Логин", "ФИО", "Роль", "Телефон", "Почта", "Статус", ""], rows.map((row) => `<tr>
+    ${form === "new" || editing ? userForm(data, editing) : ""}
+    ${tbl(["Логин", "ФИО", "Роль", "Телефон", "Почта", "Статус"], rows.map((row) => `<tr${rowEdit(row.id)}>
       <td>${esc(row.login)}</td><td class="name">${esc(personName(row))}</td><td>${esc(ROLE[row.role] || row.role)}</td>
       <td>${esc(dash(row.phone))}</td><td>${esc(dash(row.email))}</td>
       <td>${tag(USER_STATUS[row.status] || row.status, row.status === "blocked")}</td>
-      <td class="row-actions">${statusLink(`/users/${row.id}/status`, row.status === "active" ? "blocked" : "active", "users", row.status === "active" ? "заблокировать" : "разблокировать")}</td>
     </tr>`))}`;
+}
+function userForm(data, row) {
+  const client = row && data.clients.find((item) => item.user_id === row.id);
+  const trainer = row && data.trainers.find((item) => item.user_id === row.id);
+  return `<div class="form-grid">
+      <div><label>Логин</label><input name="login" value="${esc(row?.login || "")}" /></div>
+      <div><label>${row ? "Новый пароль, пустое поле не меняет текущий" : "Пароль, не короче 8 символов"}</label><input name="password" type="password" autocomplete="${row ? "new-password" : "off"}" /></div>
+      <div><label>Роль</label><select name="role">${dictOptions(ROLE, row?.role || "client")}</select></div>
+      ${row ? `<div><label>Статус</label><select name="status">${dictOptions(USER_STATUS, row.status)}</select><input type="hidden" name="prev_status" value="${esc(row.status)}" /></div>` : ""}
+      <div><label>Фамилия</label><input name="last_name" value="${esc(row?.last_name || "")}" /></div>
+      <div><label>Имя</label><input name="first_name" value="${esc(row?.first_name || "")}" /></div>
+      <div><label>Отчество</label><input name="patronymic" value="${esc(row?.patronymic || "")}" /></div>
+      <div><label>Телефон</label><input name="phone" value="${esc(row?.phone || "")}" /></div>
+      <div><label>Почта</label><input name="email" value="${esc(row?.email || "")}" /></div>
+      ${profileFields(client, trainer)}
+      ${formBtns()}
+    </div>`;
 }
 
 async function tariffsPage() {
   let rows = await load("tariffs", "/tariffs/");
-  rows = rows.filter((row) => hit([row.id, row.name, TARIFF_FORMAT[row.format], row.price, row.visit_limit, row.duration_days]));
+  rows = rows.filter((row) => hit([row.id, row.name, TARIFF_FORMAT[row.format], row.price, row.visit_limit, row.duration_days, row.revenue]));
+  const editing = typeof form === "number" ? rows.find((row) => row.id === form) : null;
   return `<h2>Тарифы</h2>
     ${searchBar("Поиск: название, формат")}
-    ${form === "new" ? `<div class="form-grid">
-      <div><label>Название</label><input name="name" /></div>
-      <div><label>Формат</label><select name="format">${Object.entries(TARIFF_FORMAT).map(([code, label]) => `<option value="${code}">${label}</option>`).join("")}</select></div>
-      <div><label>Цена</label><input name="price" value="0.00" /></div>
-      <div><label>Визитов</label><input name="visit_limit" /></div>
-      <div><label>Дней</label><input name="duration_days" value="30" /></div>
-      ${formBtns()}
-    </div>` : ""}
-    ${tbl(["№", "Название", "Формат", "Цена", "Визиты", "Дни"], rows.map((row) => `<tr>
+    ${form === "new" || editing ? tariffForm(editing) : ""}
+    ${tbl(["№", "Название", "Формат", "Цена", "Визиты", "Дни", "Услуг", "Выручка", "Средний чек"], rows.map((row) => `<tr${rowEdit(row.id)}>
       <td>${row.id}</td><td class="name">${esc(row.name)}</td><td>${esc(TARIFF_FORMAT[row.format] || row.format)}</td>
       <td class="money">${money(row.price)}</td><td>${dash(row.visit_limit)}</td><td>${row.duration_days}</td>
+      <td class="money">${row.services_cnt ?? 0}</td>
+      <td class="money">${money(row.revenue ?? 0)}</td>
+      <td class="money">${money(row.avg_check ?? 0)}</td>
     </tr>`))}`;
+}
+function tariffForm(row) {
+  return `<div class="form-grid">
+      <div><label>Название</label><input name="name" value="${esc(row?.name || "")}" /></div>
+      <div><label>Формат</label><select name="format">${dictOptions(TARIFF_FORMAT, row?.format)}</select></div>
+      <div><label>Цена</label><input name="price" value="${esc(row ? String(row.price) : "0.00")}" /></div>
+      <div><label>Визитов</label><input name="visit_limit" value="${esc(row?.visit_limit ?? "")}" /></div>
+      <div><label>Дней</label><input name="duration_days" value="${esc(row ? String(row.duration_days) : "30")}" /></div>
+      ${formBtns()}
+    </div>`;
 }
 
 async function lanesPage() {
   let rows = await load("lanes", "/lanes/");
   rows = rows.filter((row) => hit([row.id, row.name, row.length_m, row.depth_m, LANE_STATUS[row.status]]));
+  const editing = typeof form === "number" ? rows.find((row) => row.id === form) : null;
   return `<h2>Дорожки</h2>
     ${searchBar("Поиск: название, статус")}
-    ${form === "new" ? `<div class="form-grid">
-      <div><label>Название</label><input name="name" value="Дорожка 9" /></div>
-      <div><label>Длина, м</label><select name="length_m"><option value="25">25</option><option value="50">50</option></select></div>
-      <div><label>Глубина, м</label><input name="depth_m" value="1.80" /></div>
-      ${formBtns()}
-    </div>` : ""}
-    ${tbl(["№", "Название", "Длина", "Глубина", "Статус", ""], rows.map((row) => `<tr>
+    ${form === "new" || editing ? laneForm(editing) : ""}
+    ${tbl(["№", "Название", "Длина", "Глубина", "Статус"], rows.map((row) => `<tr${rowEdit(row.id)}>
       <td>${row.id}</td><td class="name">${esc(row.name)}</td><td>${row.length_m} м</td>
       <td>${Number(row.depth_m).toFixed(2)} м</td>
       <td>${tag(LANE_STATUS[row.status] || row.status, row.status === "closed")}</td>
-      <td class="row-actions">${statusLink(`/lanes/${row.id}/status`, row.status === "available" ? "closed" : "available", "lanes", row.status === "available" ? "закрыть" : "открыть")}</td>
     </tr>`))}`;
+}
+function laneForm(row) {
+  const length = row?.length_m || 25;
+  return `<div class="form-grid">
+      <div><label>Название</label><input name="name" value="${esc(row?.name || "Дорожка 9")}" /></div>
+      <div><label>Длина, м</label><select name="length_m"><option value="25"${length === 25 ? " selected" : ""}>25</option><option value="50"${length === 50 ? " selected" : ""}>50</option></select></div>
+      <div><label>Глубина, м</label><input name="depth_m" value="${esc(row ? Number(row.depth_m).toFixed(2) : "1.80")}" /></div>
+      ${row ? `<div><label>Статус</label><select name="status">${dictOptions(LANE_STATUS, row.status)}</select></div>` : ""}
+      ${formBtns()}
+    </div>`;
 }
 
 async function groupsPage() {
   const data = await refs();
   let rows = data.groups.filter((row) => hit([row.name, GROUP_STATUS[row.status], row.capacity, row.start_date, row.end_date]));
+  const editing = typeof form === "number" ? data.groups.find((row) => row.id === form) : null;
+  const members = editing ? await api(`/groups/${editing.id}/members`) : [];
   return `<h2>Группы</h2>
     ${searchBar("Поиск: название, статус")}
-    ${form === "new" && me.role === "admin" ? `<div class="form-grid">
-      <div><label>Название</label><input name="name" /></div>
-      <div><label>Вместимость</label><input name="capacity" value="12" /></div>
-      <div><label>Начало</label><input name="start_date" type="date" value="${today()}" /></div>
-      <div><label>Конец</label><input name="end_date" type="date" value="${today()}" /></div>
-      ${formBtns()}
-    </div>` : ""}
-    ${tbl(["Название", "Статус", "Места", "Срок"].concat(me.role === "admin" ? [""] : []), rows.map((row) => `<tr>
+    ${me.role === "admin" && (form === "new" || editing) ? groupForm(editing, members) : ""}
+    ${tbl(["Название", "Статус", "Места", "Срок"], rows.map((row) => `<tr${rowEdit(row.id)}>
       <td class="name">${esc(row.name)}</td>
       <td>${tag(GROUP_STATUS[row.status] || row.status, row.status === "recruiting")}</td>
       <td class="money">${row.capacity}</td>
       <td>${esc(row.start_date)} — ${esc(row.end_date)}</td>
-      ${me.role === "admin" ? `<td class="row-actions">${groupActions(row)}</td>` : ""}
     </tr>`))}`;
 }
-function groupActions(row) {
-  if (row.status === "recruiting") return statusLink(`/groups/${row.id}/status`, "training", "groups", "начать тренировки");
-  if (row.status === "training") return statusLink(`/groups/${row.id}/status`, "finished", "groups", "завершить");
-  return "";
+function groupForm(row, members = []) {
+  const roster = row && members.length
+    ? `<div class="wide"><label>Состав</label>${tbl(["Клиент", "Услуга", "Статус"], members.map((m) => `<tr>
+        <td class="name">${esc(m.name)}</td><td>${m.service_id}</td>
+        <td>${tag(SERVICE_STATUS[m.service_status] || m.service_status, m.service_status !== "active")}</td>
+      </tr>`))}</div>`
+    : row ? `<div class="wide"><label>Состав</label><p>нет клиентов с услугой в этой группе</p></div>` : "";
+  return `<div class="form-grid">
+      <div><label>Название</label><input name="name" value="${esc(row?.name || "")}" /></div>
+      <div><label>Вместимость</label><input name="capacity" value="${esc(row ? String(row.capacity) : "12")}" /></div>
+      <div><label>Начало</label><input name="start_date" type="date" value="${row ? isoDate(row.start_date) : today()}" /></div>
+      <div><label>Конец</label><input name="end_date" type="date" value="${row ? isoDate(row.end_date) : today()}" /></div>
+      ${row ? `<div><label>Статус</label><select name="status">${dictOptions(GROUP_STATUS, row.status)}</select></div>` : ""}
+      ${roster}
+      ${formBtns()}
+    </div>`;
 }
 
-function profileFields() {
-  const options = (dict) => Object.entries(dict).map(([code, label]) => `<option value="${code}">${label}</option>`).join("");
+function profileFields(client, trainer) {
   return `
-    <div data-for="client"><label>Паспорт</label><input name="passport" maxlength="20" /></div>
-    <div data-for="client"><label>Дата рождения</label><input name="birth_date" type="date" /></div>
-    <div data-for="client" class="wide"><label>Адрес</label><input name="address" /></div>
-    <div data-for="client"><label>Медсправка</label><select name="medical_certificate"><option value="false">нет</option><option value="true">есть</option></select></div>
-    <div data-for="trainer" hidden><label>Квалификация</label><select name="qualification">${options(QUAL)}</select></div>
-    <div data-for="trainer" hidden><label>Разряд</label><select name="rank">${options(RANK)}</select></div>
-    <div data-for="trainer" hidden><label>Стаж, лет</label><input name="experience_years" value="0" /></div>
-    <div data-for="trainer" hidden><label>Специализация</label><select name="specialization">${options(SPEC)}</select></div>`;
+    <div data-for="client"><label>Паспорт</label><input name="passport" maxlength="20" value="${esc(client?.passport || "")}" /></div>
+    <div data-for="client"><label>Дата рождения</label><input name="birth_date" type="date" value="${client ? isoDate(client.birth_date) : ""}" /></div>
+    <div data-for="client" class="wide"><label>Адрес</label><input name="address" value="${esc(client?.address || "")}" /></div>
+    <div data-for="client"><label>Медсправка</label><select name="medical_certificate"><option value="false"${client?.medical_certificate ? "" : " selected"}>нет</option><option value="true"${client?.medical_certificate ? " selected" : ""}>есть</option></select></div>
+    <div data-for="trainer" hidden><label>Квалификация</label><select name="qualification">${dictOptions(QUAL, trainer?.qualification)}</select></div>
+    <div data-for="trainer" hidden><label>Разряд</label><select name="rank">${dictOptions(RANK, trainer?.rank)}</select></div>
+    <div data-for="trainer" hidden><label>Стаж, лет</label><input name="experience_years" value="${esc(trainer ? String(trainer.experience_years) : "0")}" /></div>
+    <div data-for="trainer" hidden><label>Специализация</label><select name="specialization">${dictOptions(SPEC, trainer?.specialization)}</select></div>`;
 }
 function showRoleFields(role) {
   document.querySelectorAll("[data-for]").forEach((field) => {
@@ -745,26 +871,32 @@ function showRoleFields(role) {
 
 async function permitsPage() {
   const data = await refs();
-  let rows = await load("permits", "/permits/");
-  rows = rows.filter((row) => hit([
+  const all = await load("permits", "/permits/");
+  const rows = all.filter((row) => hit([
     me.role === "trainer" ? personName(me) : trainerName(data, row.trainer_id),
     WORK[row.work_format_id], row.issued_on, row.expires_on,
   ]));
-  const formats = [2, 3, 4].map((id) => `<option value="${id}">${WORK[id]}</option>`).join("");
+  const own = me.role === "trainer";
+  const editingKey = typeof form === "string" && form !== "new" ? form : "";
+  const editing = editingKey ? all.find((row) => `${row.trainer_id}/${row.work_format_id}` === editingKey) : null;
   return `<h2>Допуски</h2>
-    ${searchBar("Поиск: тренер, формат")}
-    ${form === "new" && me.role === "admin" ? `<div class="form-grid">
-      <div><label>Тренер</label>${select("trainer_id", data.trainers, (item) => item.id, (item) => trainerName(data, item.id))}</div>
-      <div><label>Формат</label><select name="work_format_id">${formats}</select></div>
-      <div><label>Выдан</label><input name="issued_on" type="date" value="${today()}" /></div>
-      <div><label>До</label><input name="expires_on" type="date" /></div>
-      ${formBtns()}
-    </div>` : ""}
-    ${tbl(["Тренер", "Формат", "Выдан", "До"], rows.map((row) => `<tr>
-      <td class="name">${esc(me.role === "trainer" ? personName(me) : trainerName(data, row.trainer_id))}</td>
-      <td>${esc(WORK[row.work_format_id] || row.work_format_id)}</td>
+    ${searchBar(own ? "Поиск: формат" : "Поиск: тренер, формат")}
+    ${me.role === "admin" && (form === "new" || editing) ? permitForm(data, editing) : ""}
+    ${tbl((own ? [] : ["Тренер"]).concat(["Формат", "Выдан", "До"]), rows.map((row) => `<tr${rowEdit(`${row.trainer_id}/${row.work_format_id}`)}>
+      ${own ? "" : `<td class="name">${esc(trainerName(data, row.trainer_id))}</td>`}
+      <td class="${own ? "name" : ""}">${esc(WORK[row.work_format_id] || row.work_format_id)}</td>
       <td>${esc(row.issued_on)}</td><td>${esc(row.expires_on || "бессрочно")}</td>
     </tr>`))}`;
+}
+function permitForm(data, row) {
+  const formats = { 2: WORK[2], 3: WORK[3], 4: WORK[4] };
+  return `<div class="form-grid">
+      <div><label>Тренер</label>${select("trainer_id", data.trainers, (item) => item.id, (item) => trainerName(data, item.id), null, row?.trainer_id)}</div>
+      <div><label>Формат</label><select name="work_format_id">${dictOptions(formats, row?.work_format_id)}</select></div>
+      <div><label>Выдан</label><input name="issued_on" type="date" value="${row ? isoDate(row.issued_on) : today()}" /></div>
+      <div><label>До</label><input name="expires_on" type="date" value="${row && row.expires_on ? isoDate(row.expires_on) : ""}" /></div>
+      ${formBtns()}
+    </div>`;
 }
 
 async function journalPage() {
@@ -773,8 +905,19 @@ async function journalPage() {
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
   if (q.trim()) params.set("q", q.trim());
-  const rows = await load("journal:" + params.toString(), "/journal/?" + params.toString());
+  let rows = [];
+  let notice = "";
+  if (filters.from && filters.to && filters.to < filters.from) {
+    notice = explain("to must be after from");
+  } else {
+    try {
+      rows = await load("journal:" + params.toString(), "/journal/?" + params.toString());
+    } catch (error) {
+      notice = explain(error.message, error.status);
+    }
+  }
   return `<h2>Журнал</h2>
+    ${notice ? `<p class="msg">${esc(notice)}</p>` : ""}
     <div class="filters">
       <input id="q" placeholder="поиск по описанию" value="${esc(q)}" />
       <select data-filter="action">
@@ -791,9 +934,6 @@ async function journalPage() {
     </tr>`))}`;
 }
 
-function statusLink(path, status, bucket, label) {
-  return `<a href="#" data-act="status" data-path="${path}" data-status="${status}" data-drop="${bucket}">${label}</a>`;
-}
 function themeControl() {
   const dark = document.body.classList.contains("theme-dark");
   return `<button type="button" class="theme" data-theme aria-pressed="${dark}" aria-label="Тема">
@@ -880,22 +1020,32 @@ async function render() {
     focusSearch = false;
   }
   if (page === "enrollments" && form === "new") filterEnrollmentServices();
+  if (page === "sessions") showSessionClient();
+  if (page === "users") {
+    const roleField = document.querySelector("[name=role]");
+    if (roleField) showRoleFields(roleField.value);
+  }
 }
 
 async function filterEnrollmentServices() {
   const sessionField = document.querySelector("[name=session_id]");
-  const serviceField = document.querySelector("[name=service_id]");
-  if (!sessionField || !serviceField) return;
+  const hidden = document.querySelector(".pick [name=service_id]");
+  const box = hidden && hidden.closest(".pick");
+  if (!sessionField || !box) return;
   const sessions = await load("sessions", "/sessions/");
   const session = sessions.find((item) => item.id === num(sessionField.value));
-  let first = "";
-  [...serviceField.options].forEach((option) => {
-    const sameFormat = session && Number(option.dataset.format) === session.work_format_id;
-    const sameGroup = session && (session.work_format_id < 3 || option.dataset.group === String(session.group_id || ""));
-    option.hidden = !(sameFormat && sameGroup);
-    if (!option.hidden && !first) first = option.value;
+  const rows = pickRows(box).map((row) => {
+    const sameFormat = session && Number(row.format) === session.work_format_id;
+    const sameGroup = session && (session.work_format_id < 3 || String(row.group) === String(session.group_id || ""));
+    return Object.assign({}, row, { blocked: !(sameFormat && sameGroup) });
   });
-  if (serviceField.selectedOptions[0]?.hidden) serviceField.value = first;
+  box.dataset.rows = JSON.stringify(rows);
+  const current = rows.find((row) => row.value === String(hidden.value));
+  if (!current || current.blocked) {
+    hidden.value = "";
+    box.querySelector(".pick-q").value = "";
+  }
+  filterPick(box);
 }
 
 function fields() {
@@ -914,21 +1064,31 @@ async function save() {
       const tariffs = await load("tariffs", "/tariffs/");
       const tariff = tariffs.find((item) => item.id === num(input.tariff_id));
       const needsGroup = tariff && (tariff.work_format_id === 3 || tariff.work_format_id === 4);
-      await api("/services/", { method: "POST", body: {
+      const body = {
         client_id: num(input.client_id),
         tariff_id: num(input.tariff_id),
         group_id: needsGroup ? num(input.group_id) : null,
         start_date: input.start_date,
-      }});
+      };
+      if (typeof form === "number") {
+        body.end_date = input.end_date;
+        body.status = input.status;
+        await api(`/services/${form}`, { method: "PUT", body });
+      } else {
+        await api("/services/", { method: "POST", body });
+      }
       drop("services");
     } else if (page === "payments") {
-      await api("/payments/", { method: "POST", body: {
+      const body = {
         service_id: num(input.service_id),
         amount: Number(input.amount),
         method: input.method,
         purpose: input.purpose,
         status: input.status,
-      }});
+        paid_on: input.paid_on,
+      };
+      if (typeof form === "number") await api(`/payments/${form}`, { method: "PUT", body });
+      else await api("/payments/", { method: "POST", body });
       drop("payments");
     } else if (page === "sessions" && bookID) {
       await api("/enrollments/", { method: "POST", body: {
@@ -941,7 +1101,7 @@ async function save() {
     } else if (page === "sessions") {
       const format = num(input.work_format_id);
       const needsGroup = format === 3 || format === 4;
-      await api("/sessions/", { method: "POST", body: {
+      const body = {
         work_format_id: format,
         group_id: needsGroup ? num(input.group_id) : null,
         lane_id: input.lane_id ? num(input.lane_id) : null,
@@ -950,17 +1110,29 @@ async function save() {
         end_time: input.end_time,
         topic: input.topic || null,
         trainer_ids: format === 1 || !input.trainer_id ? [] : [num(input.trainer_id)],
-      }});
+        client_id: format < 3 && input.client_id ? num(input.client_id) : null,
+      };
+      if (typeof form === "number") {
+        body.was_held = input.was_held === "true";
+        await api(`/sessions/${form}`, { method: "PUT", body });
+      } else {
+        await api("/sessions/", { method: "POST", body });
+      }
       drop("sessions");
+      drop("enrollments");
     } else if (page === "enrollments") {
-      await api("/enrollments/", { method: "POST", body: {
-        service_id: num(input.service_id),
-        session_id: num(input.session_id),
-        comment: input.comment || "",
-      }});
+      if (typeof form === "string" && form.includes("/")) {
+        await api(`/enrollments/${form}`, { method: "PATCH", body: { attended: input.attended === "true" } });
+      } else {
+        await api("/enrollments/", { method: "POST", body: {
+          service_id: num(input.service_id),
+          session_id: num(input.session_id),
+          comment: input.comment || "",
+        }});
+      }
       drop("enrollments");
     } else if (page === "standards") {
-      await api("/standards/", { method: "POST", body: {
+      const body = {
         client_id: num(input.client_id),
         trainer_id: num(input.trainer_id),
         style: input.style,
@@ -969,20 +1141,23 @@ async function save() {
         result_time: input.result_time || "",
         outcome: input.outcome,
         attempt_no: num(input.attempt_no) || 1,
-      }});
+      };
+      if (typeof form === "number") await api(`/standards/${form}`, { method: "PUT", body });
+      else await api("/standards/", { method: "POST", body });
       drop("standards");
     } else if (page === "permits") {
-      await api("/permits/", { method: "POST", body: {
+      const body = {
         trainer_id: num(input.trainer_id),
         work_format_id: num(input.work_format_id),
         issued_on: input.issued_on,
         expires_on: input.expires_on || "",
-      }});
+      };
+      if (typeof form === "string" && form.includes("/")) await api(`/permits/${form}`, { method: "PUT", body });
+      else await api("/permits/", { method: "POST", body });
       drop("permits");
     } else if (page === "users") {
-      await api("/users/", { method: "POST", body: {
+      const body = {
         login: input.login,
-        password: input.password,
         role: input.role,
         last_name: input.last_name,
         first_name: input.first_name,
@@ -997,35 +1172,54 @@ async function save() {
         rank: input.rank || "",
         experience_years: num(input.experience_years),
         specialization: input.specialization || "",
-      }});
+      };
+      if (typeof form === "number") {
+        await api(`/users/${form}`, { method: "PUT", body });
+        if (input.status && input.status !== input.prev_status) {
+          await api(`/users/${form}/status`, { method: "PATCH", body: { status: input.status } });
+        }
+        if (input.password) {
+          await api(`/users/${form}/password`, { method: "PATCH", body: { password: input.password } });
+        }
+      } else {
+        body.password = input.password;
+        await api("/users/", { method: "POST", body });
+      }
       drop("users");
       drop("clients");
       drop("trainers");
     } else if (page === "tariffs") {
       const sport = input.format === "sport_pass";
-      await api("/tariffs/", { method: "POST", body: {
+      const body = {
         name: input.name,
         format: input.format,
         price: sport ? 0 : Number(input.price),
         visit_limit: sport || input.visit_limit === "" ? null : num(input.visit_limit),
         duration_days: num(input.duration_days),
-      }});
+      };
+      if (typeof form === "number") await api(`/tariffs/${form}`, { method: "PUT", body });
+      else await api("/tariffs/", { method: "POST", body });
       drop("tariffs");
     } else if (page === "lanes") {
-      await api("/lanes/", { method: "POST", body: {
+      const body = {
         name: input.name,
         length_m: num(input.length_m),
         depth_m: Number(input.depth_m),
-        status: "available",
-      }});
+        status: input.status || "available",
+      };
+      if (typeof form === "number") await api(`/lanes/${form}`, { method: "PUT", body });
+      else await api("/lanes/", { method: "POST", body });
       drop("lanes");
     } else if (page === "groups") {
-      await api("/groups/", { method: "POST", body: {
+      const body = {
         name: input.name,
         capacity: num(input.capacity),
         start_date: input.start_date,
         end_date: input.end_date,
-      }});
+        status: input.status || "recruiting",
+      };
+      if (typeof form === "number") await api(`/groups/${form}`, { method: "PUT", body });
+      else await api("/groups/", { method: "POST", body });
       drop("groups");
     }
     form = null;
@@ -1038,11 +1232,19 @@ async function save() {
 }
 
 document.getElementById("app").addEventListener("click", async (event) => {
+  const pickItem = event.target.closest(".pick-item");
+  if (pickItem) {
+    event.preventDefault();
+    choosePick(pickItem);
+    return;
+  }
+  closePicks(event.target.closest(".pick"));
   const theme = event.target.closest("[data-theme]");
   if (theme) {
     const dark = !document.body.classList.contains("theme-dark");
     document.body.classList.toggle("theme-dark", dark);
     document.body.classList.toggle("theme-light", !dark);
+    localStorage.setItem("theme", dark ? "dark" : "light");
     theme.setAttribute("aria-pressed", String(dark));
     return;
   }
@@ -1118,6 +1320,10 @@ document.getElementById("app").addEventListener("click", async (event) => {
     } else if (act.dataset.act === "attend") {
       await api(act.dataset.path, { method: "PATCH", body: { attended: act.dataset.attended === "1" } });
       drop("enrollments");
+    } else if (act.dataset.act === "edit") {
+      form = act.dataset.id.includes("/") ? act.dataset.id : num(act.dataset.id);
+      if (act.dataset.people) people = act.dataset.people;
+      bookID = 0;
     } else if (act.dataset.act === "book") {
       bookID = num(act.dataset.id);
       form = null;
@@ -1133,7 +1339,16 @@ document.getElementById("app").addEventListener("click", async (event) => {
     report(error);
   }
 });
+document.getElementById("app").addEventListener("focusin", (event) => {
+  if (!event.target.classList.contains("pick-q")) return;
+  filterPick(event.target.closest(".pick"));
+});
 document.getElementById("app").addEventListener("input", (event) => {
+  if (event.target.classList.contains("pick-q")) {
+    event.target.closest(".pick").querySelector("input[type=hidden]").value = "";
+    filterPick(event.target.closest(".pick"));
+    return;
+  }
   if (event.target.id !== "q") return;
   q = event.target.value;
   tablePage = 1;
@@ -1143,6 +1358,7 @@ document.getElementById("app").addEventListener("input", (event) => {
 });
 document.getElementById("app").addEventListener("change", (event) => {
   if (event.target.name === "session_id") filterEnrollmentServices();
+  if (event.target.name === "work_format_id") showSessionClient();
   if (event.target.name === "role") showRoleFields(event.target.value);
   if (!event.target.dataset.filter) return;
   filters[event.target.dataset.filter] = event.target.value;

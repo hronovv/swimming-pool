@@ -34,6 +34,7 @@ func TestCreateFreeSwimClearsTopicAndKeepsWasHeldFalse(t *testing.T) {
 		StartTime:    time.Date(0, 1, 1, 9, 0, 0, 0, time.UTC),
 		EndTime:      time.Date(0, 1, 1, 9, 45, 0, 0, time.UTC),
 		Topic:        &topic,
+		ClientID:     intPtr(1),
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -51,10 +52,20 @@ func TestCreateRequiresGroupForSport(t *testing.T) {
 	}
 }
 
+func TestCreateRequiresClientForFreeSwim(t *testing.T) {
+	svc := NewService(&stubRepo{})
+	_, err := svc.Create(context.Background(), sampleSession(workFormatFreeSwim, nil))
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("got %v, want ErrInvalid", err)
+	}
+}
+
 func TestCreateRejectsGroupForIndividual(t *testing.T) {
 	groupID := 6
 	svc := NewService(&stubRepo{})
-	_, err := svc.Create(context.Background(), sampleSession(workFormatIndividual, &groupID))
+	item := sampleSession(workFormatIndividual, &groupID)
+	item.ClientID = intPtr(1)
+	_, err := svc.Create(context.Background(), item)
 	if !errors.Is(err, ErrInvalid) {
 		t.Fatalf("got %v, want ErrInvalid", err)
 	}
@@ -63,6 +74,7 @@ func TestCreateRejectsGroupForIndividual(t *testing.T) {
 func TestCreateRejectsTrainerOnFreeSwim(t *testing.T) {
 	svc := NewService(&stubRepo{})
 	item := sampleSession(workFormatFreeSwim, nil)
+	item.ClientID = intPtr(1)
 	item.TrainerIDs = []int{3}
 	_, err := svc.Create(context.Background(), item)
 	if !errors.Is(err, ErrInvalid) {
@@ -73,6 +85,7 @@ func TestCreateRejectsTrainerOnFreeSwim(t *testing.T) {
 func TestCreateRejectsEndTimeNotAfterStart(t *testing.T) {
 	svc := NewService(&stubRepo{})
 	item := sampleSession(workFormatFreeSwim, nil)
+	item.ClientID = intPtr(1)
 	item.EndTime = item.StartTime
 	_, err := svc.Create(context.Background(), item)
 	if !errors.Is(err, ErrInvalid) {

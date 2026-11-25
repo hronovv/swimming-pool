@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"pool/internal/auth"
+	"pool/internal/user"
 )
 
 type SessionService interface {
@@ -65,6 +67,7 @@ type SessionRequest struct {
 	Topic        *string `json:"topic"`
 	WasHeld      *bool   `json:"was_held"`
 	TrainerIDs   []int   `json:"trainer_ids"`
+	ClientID     *int    `json:"client_id"`
 }
 
 type HeldRequest struct {
@@ -76,6 +79,7 @@ func (h *Handler) GetAll(c *gin.Context) {
 	if !ok {
 		return
 	}
+	filter = applyViewer(c, filter)
 
 	sessions, err := h.service.GetAll(c.Request.Context(), filter)
 	if err != nil {
@@ -103,7 +107,42 @@ func (h *Handler) GetByID(c *gin.Context) {
 		return
 	}
 
+	if !h.canSee(c, item) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
 	c.JSON(http.StatusOK, toSessionResponse(item))
+}
+
+func applyViewer(c *gin.Context, filter Filter) Filter {
+	actor, ok := auth.CurrentUser(c)
+	if !ok {
+		return filter
+	}
+	switch actor.Role {
+	case user.RoleTrainer:
+		filter.TrainerUserID = actor.ID
+	case user.RoleClient:
+		filter.ClientUserID = actor.ID
+	}
+	return filter
+}
+
+func (h *Handler) canSee(c *gin.Context, item Session) bool {
+	actor, ok := auth.CurrentUser(c)
+	if !ok || actor.Role == user.RoleAdmin {
+		return true
+	}
+	list, err := h.service.GetAll(c.Request.Context(), applyViewer(c, Filter{}))
+	if err != nil {
+		return false
+	}
+	for _, session := range list {
+		if session.ID == item.ID {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -294,6 +333,7 @@ func toSession(c *gin.Context, req SessionRequest, id int) (Session, bool) {
 		Topic:        req.Topic,
 		WasHeld:      wasHeld,
 		TrainerIDs:   req.TrainerIDs,
+		ClientID:     req.ClientID,
 	}, true
 }
 
