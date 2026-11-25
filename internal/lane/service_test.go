@@ -27,6 +27,7 @@ func (s *stubRepo) Update(_ context.Context, lane Lane) error {
 	s.updated = lane
 	return nil
 }
+func (s *stubRepo) Delete(context.Context, int) error { return nil }
 func (s *stubRepo) UpdateStatus(_ context.Context, _ int, status string) error {
 	s.status = status
 	return nil

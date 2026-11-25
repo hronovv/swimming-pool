@@ -14,6 +14,7 @@ const (
 var (
 	ErrNotFound     = errors.New("group not found")
 	ErrInvalid      = errors.New("invalid group")
+	ErrInUse        = errors.New("group is still in use")
 	allowedStatuses = map[string]struct{}{
 		StatusRecruiting: {},
 		StatusTraining:   {},

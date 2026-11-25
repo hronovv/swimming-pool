@@ -127,3 +127,14 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int, status string) er
 
 	return nil
 }
+
+func (r *Repository) Delete(ctx context.Context, id int) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM lanes WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete lane: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

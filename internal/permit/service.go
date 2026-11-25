@@ -10,6 +10,7 @@ type PermitRepository interface {
 	GetAll(ctx context.Context, filter Filter) ([]Permit, error)
 	Create(ctx context.Context, item Permit) (Permit, error)
 	Update(ctx context.Context, trainerID, workFormatID int, item Permit) error
+	Delete(ctx context.Context, trainerID, workFormatID int) error
 	TrainerIDByUser(ctx context.Context, userID int) (int, error)
 }
 
@@ -52,6 +53,13 @@ func (s *Service) Update(ctx context.Context, trainerID, workFormatID int, item 
 		return err
 	}
 	return s.repo.Update(ctx, trainerID, workFormatID, prepared)
+}
+
+func (s *Service) Delete(ctx context.Context, trainerID, workFormatID int) error {
+	if trainerID <= 0 || workFormatID <= 0 {
+		return fmt.Errorf("%w: permit is required", ErrInvalid)
+	}
+	return s.repo.Delete(ctx, trainerID, workFormatID)
 }
 
 func preparePermit(item Permit) (Permit, error) {

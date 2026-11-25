@@ -72,6 +72,20 @@ func (r *Repository) Update(ctx context.Context, trainerID, workFormatID int, it
 	return nil
 }
 
+func (r *Repository) Delete(ctx context.Context, trainerID, workFormatID int) error {
+	tag, err := r.db.Exec(ctx, `
+		DELETE FROM trainer_permits
+		WHERE trainer_id = $1 AND work_format_id = $2
+	`, trainerID, workFormatID)
+	if err != nil {
+		return fmt.Errorf("delete permit: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func mapRepoErr(err error) error {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {

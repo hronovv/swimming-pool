@@ -22,6 +22,7 @@ func (s *stubRepo) Create(_ context.Context, item Session) (Session, error) {
 }
 func (s *stubRepo) Update(context.Context, Session) error       { return nil }
 func (s *stubRepo) UpdateHeld(context.Context, int, bool) error { return nil }
+func (s *stubRepo) Delete(context.Context, int) error           { return nil }
 
 func TestCreateFreeSwimClearsTopicAndKeepsWasHeldFalse(t *testing.T) {
 	repo := &stubRepo{}

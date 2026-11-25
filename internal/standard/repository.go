@@ -149,6 +149,17 @@ func (r *Repository) Update(ctx context.Context, item Standard) error {
 	return nil
 }
 
+func (r *Repository) Delete(ctx context.Context, id int) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM standards WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete standard: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func mapRepoErr(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23503" {

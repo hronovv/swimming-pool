@@ -12,6 +12,7 @@ type ServiceRepository interface {
 	Create(ctx context.Context, model Model) (Model, error)
 	Update(ctx context.Context, model Model) error
 	UpdateStatus(ctx context.Context, id int, status string) error
+	Delete(ctx context.Context, id int) error
 	TariffInfo(ctx context.Context, tariffID int) (TariffInfo, error)
 	MedicalCertificate(ctx context.Context, clientID int) (bool, error)
 	ClientIDByUser(ctx context.Context, userID int) (int, error)
@@ -83,6 +84,13 @@ func (s *Service) UpdateStatus(ctx context.Context, id int, status string) error
 		return err
 	}
 	return s.repo.UpdateStatus(ctx, id, status)
+}
+
+func (s *Service) Delete(ctx context.Context, id int) error {
+	if id <= 0 {
+		return fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.Delete(ctx, id)
 }
 
 func (s *Service) prepare(ctx context.Context, model Model, fillEnd bool) (Model, error) {

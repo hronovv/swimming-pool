@@ -20,6 +20,7 @@ func (s *stubRepo) Create(_ context.Context, item Enrollment) (Enrollment, error
 	return item, nil
 }
 func (s *stubRepo) UpdateAttended(context.Context, int, int, bool) error { return nil }
+func (s *stubRepo) Delete(context.Context, int, int) error               { return nil }
 func (s *stubRepo) ServiceLink(context.Context, int) (Link, error) {
 	return s.service, s.svcErr
 }

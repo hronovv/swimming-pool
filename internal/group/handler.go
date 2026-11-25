@@ -17,6 +17,7 @@ type GroupService interface {
 	Create(ctx context.Context, group Group) (Group, error)
 	Update(ctx context.Context, group Group) error
 	UpdateStatus(ctx context.Context, id int, status string) error
+	Delete(ctx context.Context, id int) error
 }
 
 type Handler struct {
@@ -38,6 +39,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 		groups.GET("/:id", h.GetByID)
 		groups.PUT("/:id", h.Update)
 		groups.PATCH("/:id/status", h.UpdateStatus)
+		groups.DELETE("/:id", h.Delete)
 	}
 }
 
@@ -185,6 +187,18 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *Handler) Delete(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	if err := h.service.Delete(c.Request.Context(), id); err != nil {
+		writeGroupError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func parseID(c *gin.Context) (int, bool) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -264,6 +278,8 @@ func writeGroupError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "group not found"})
+	case errors.Is(err, ErrInUse):
+		c.JSON(http.StatusConflict, gin.H{"error": "group is still in use"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}

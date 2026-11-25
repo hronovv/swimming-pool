@@ -53,6 +53,20 @@ func (r *Repository) Create(ctx context.Context, item Enrollment) (Enrollment, e
 	return item, nil
 }
 
+func (r *Repository) Delete(ctx context.Context, serviceID, sessionID int) error {
+	tag, err := r.db.Exec(ctx, `
+		DELETE FROM session_enrollments
+		WHERE service_id = $1 AND session_id = $2
+	`, serviceID, sessionID)
+	if err != nil {
+		return fmt.Errorf("delete enrollment: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *Repository) UpdateAttended(ctx context.Context, serviceID, sessionID int, attended bool) error {
 	sqlQuery := `
 		UPDATE session_enrollments

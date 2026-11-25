@@ -21,6 +21,7 @@ var (
 	ErrNotFound        = errors.New("tariff not found")
 	ErrInvalid         = errors.New("invalid tariff")
 	ErrConflict        = errors.New("tariff already exists")
+	ErrInUse           = errors.New("tariff is still in use")
 	workFormatByFormat = map[string]int{
 		FormatFreeSwimOneTime:        WorkFormatFreeSwim,
 		FormatFreeSwimSubscription:   WorkFormatFreeSwim,

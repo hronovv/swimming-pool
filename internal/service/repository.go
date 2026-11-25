@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -145,6 +146,18 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int, status string) er
 	return nil
 }
 
+func (r *Repository) Delete(ctx context.Context, id int) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM services WHERE id = $1`, id)
+	if err != nil {
+		return mapRepoErr(err, "delete service")
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	_, _ = r.db.Exec(ctx, `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_tariff_stats`)
+	return nil
+}
+
 const viewPersonNameSQL = `trim(v.last_name || ' ' || left(v.first_name, 1) || '.' || CASE WHEN coalesce(v.patronymic, '') = '' THEN '' ELSE ' ' || left(v.patronymic, 1) || '.' END)`
 
 func (r *Repository) MedicalCertificate(ctx context.Context, clientID int) (bool, error) {
@@ -191,14 +204,21 @@ func (r *Repository) TariffInfo(ctx context.Context, tariffID int) (TariffInfo, 
 
 func mapRepoErr(err error, op string) error {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-		switch pgErr.ConstraintName {
-		case "fk_services_client":
-			return ErrClientNotFound
-		case "fk_services_tariff":
-			return ErrTariffNotFound
-		case "fk_services_group":
-			return ErrGroupNotFound
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23503":
+			switch pgErr.ConstraintName {
+			case "fk_services_client":
+				return ErrClientNotFound
+			case "fk_services_tariff":
+				return ErrTariffNotFound
+			case "fk_services_group":
+				return ErrGroupNotFound
+			default:
+				if strings.HasPrefix(op, "delete") {
+					return ErrInUse
+				}
+			}
 		}
 	}
 	return fmt.Errorf("%s: %w", op, err)

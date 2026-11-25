@@ -18,6 +18,7 @@ type SessionService interface {
 	Create(ctx context.Context, session Session) (Session, error)
 	Update(ctx context.Context, session Session) error
 	UpdateHeld(ctx context.Context, id int, wasHeld bool) error
+	Delete(ctx context.Context, id int) error
 }
 
 type Handler struct {
@@ -38,6 +39,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 		sessions.GET("/:id", h.GetByID)
 		sessions.PUT("/:id", h.Update)
 		sessions.PATCH("/:id/held", h.UpdateHeld)
+		sessions.DELETE("/:id", h.Delete)
 	}
 }
 
@@ -208,6 +210,18 @@ func (h *Handler) UpdateHeld(c *gin.Context) {
 		return
 	}
 
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) Delete(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	if err := h.service.Delete(c.Request.Context(), id); err != nil {
+		writeSessionError(c, err)
+		return
+	}
 	c.Status(http.StatusNoContent)
 }
 

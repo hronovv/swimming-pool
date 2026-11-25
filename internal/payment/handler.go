@@ -19,6 +19,7 @@ type PaymentService interface {
 	Create(ctx context.Context, payment Payment) (Payment, error)
 	Update(ctx context.Context, payment Payment) error
 	UpdateStatus(ctx context.Context, id int, status string) error
+	Delete(ctx context.Context, id int) error
 }
 
 type Handler struct {
@@ -39,6 +40,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 		payments.GET("/:id", h.GetByID)
 		payments.PUT("/:id", h.Update)
 		payments.PATCH("/:id/status", h.UpdateStatus)
+		payments.DELETE("/:id", h.Delete)
 	}
 }
 
@@ -222,6 +224,18 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) Delete(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	if err := h.service.Delete(c.Request.Context(), id); err != nil {
+		writePaymentError(c, err)
+		return
+	}
 	c.Status(http.StatusNoContent)
 }
 

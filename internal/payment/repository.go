@@ -165,6 +165,18 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int, status string) er
 	return nil
 }
 
+func (r *Repository) Delete(ctx context.Context, id int) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM payments WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete payment: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	_ = r.refreshTariffStats(ctx)
+	return nil
+}
+
 func (r *Repository) refreshTariffStats(ctx context.Context) error {
 	_, err := r.db.Exec(ctx, `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_tariff_stats`)
 	return err

@@ -25,6 +25,7 @@ func (s *stubRepo) Create(_ context.Context, model Model) (Model, error) {
 }
 func (s *stubRepo) Update(context.Context, Model) error             { return nil }
 func (s *stubRepo) UpdateStatus(context.Context, int, string) error { return nil }
+func (s *stubRepo) Delete(context.Context, int) error               { return nil }
 func (s *stubRepo) TariffInfo(context.Context, int) (TariffInfo, error) {
 	return s.tariff, s.tariffErr
 }

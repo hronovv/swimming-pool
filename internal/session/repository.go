@@ -270,6 +270,28 @@ func (r *Repository) UpdateHeld(ctx context.Context, id int, wasHeld bool) error
 	return nil
 }
 
+func (r *Repository) Delete(ctx context.Context, id int) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM session_enrollments WHERE session_id = $1`, id); err != nil {
+		return fmt.Errorf("delete session enrollments: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM session_trainers WHERE session_id = $1`, id); err != nil {
+		return fmt.Errorf("delete session trainers: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM sessions WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete session: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
+}
+
 func mapRepoErr(err error, op string) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23503" {

@@ -61,9 +61,12 @@ const ERRORS = {
   "trainer not found": "Тренер не найден",
   "tariff not found": "Тариф не найден",
   "tariff already exists": "Тариф с таким названием уже есть",
+  "tariff is still in use": "Тариф используется услугами — удалить нельзя",
   "group not found": "Группа не найдена",
+  "group is still in use": "Группа используется — удалить нельзя",
   "lane not found": "Дорожка не найдена",
   "service not found": "Услуга не найдена",
+  "service is still in use": "У услуги есть платежи или явки — удалить нельзя",
   "payment not found": "Платёж не найден",
   "session not found": "Занятие не найдено",
   "enrollment not found": "Запись не найдена",
@@ -280,8 +283,12 @@ function pager(total, pages) {
     <button type="button" class="btn-line" data-page="next" ${tablePage === pages ? "disabled" : ""}>дальше</button>
   </div>`;
 }
-function formBtns() {
-  return `<div class="wide"><button type="button" class="btn" data-act="save">Сохранить</button> <button type="button" class="btn-line" data-form="off">Отмена</button></div>`;
+function formBtns(canDelete) {
+  return `<div class="wide">
+    <button type="button" class="btn" data-act="save">Сохранить</button>
+    <button type="button" class="btn-line" data-form="off">Отмена</button>
+    ${canDelete ? `<button type="button" class="btn-line" data-act="remove">Удалить</button>` : ""}
+  </div>`;
 }
 function rowEdit(id, extra) {
   if (me.role !== "admin" || id == null || id === "") return "";
@@ -481,7 +488,7 @@ function serviceForm(data, row) {
     <div><label>Начало</label><input name="start_date" type="date" value="${row ? isoDate(row.start_date) : today()}" /></div>
     ${row ? `<div><label>Конец</label><input name="end_date" type="date" value="${isoDate(row.end_date)}" /></div>
       <div><label>Статус</label><select name="status">${Object.entries(SERVICE_STATUS).map(([code, label]) => `<option value="${code}"${row.status === code ? " selected" : ""}>${label}</option>`).join("")}</select></div>` : ""}
-    ${formBtns()}
+    ${formBtns(!!row)}
   </div>`;
 }
 async function paymentsPage() {
@@ -516,7 +523,7 @@ function paymentForm(payable, data, row) {
       <div><label>Статус</label><select name="status">${dictOptions(PAY_STATUS, row?.status || "completed")}</select></div>
       <div><label>Дата</label><input name="paid_on" type="date" value="${row ? isoDate(row.paid_on) : today()}" /></div>
       <div><label>Назначение</label><input name="purpose" value="${esc(row?.purpose || "Оплата тарифа")}" /></div>
-      ${formBtns()}
+      ${formBtns(!!row)}
     </div>`;
 }
 
@@ -576,7 +583,7 @@ function sessionForm(data, row, clientID) {
       <div><label>Тема</label><input name="topic" value="${esc(row?.topic || "")}" /></div>
       <div><label>Тренер</label>${select("trainer_id", data.trainers, (item) => item.id, (item) => trainerName(data, item.id), "—", row?.trainer_ids?.[0])}</div>
       ${row ? `<div><label>Статус</label><select name="was_held"><option value="true"${row.was_held ? " selected" : ""}>проведено</option><option value="false"${row.was_held ? "" : " selected"}>запланировано</option></select></div>` : ""}
-      ${formBtns()}
+      ${formBtns(!!row)}
     </div>`;
 }
 function showSessionClient() {
@@ -640,7 +647,7 @@ async function enrollmentsPage() {
     </div>` : ""}
     ${me.role === "admin" && editing ? `<div class="form-grid">
       <div><label>Явка</label><select name="attended"><option value="true"${editing.attended ? " selected" : ""}>был</option><option value="false"${editing.attended ? "" : " selected"}>не был</option></select></div>
-      ${formBtns()}
+      ${formBtns(true)}
     </div>` : ""}
     ${tbl(["Занятие", "Клиент", "Тариф", "Явка", "Комментарий"].concat(me.role === "trainer" ? [""] : []),
       rows.map((row) => {
@@ -699,7 +706,7 @@ function standardForm(data, row, trainer) {
       <div><label>Результат</label><input name="result_time" placeholder="00:00:26" value="${esc(row?.result_time || "")}" /></div>
       <div><label>Итог</label><select name="outcome">${dictOptions(OUTCOME, row?.outcome)}</select></div>
       <div><label>Попытка</label><input name="attempt_no" value="${esc(row ? String(row.attempt_no) : "1")}" /></div>
-      ${formBtns()}
+      ${formBtns(!!row)}
     </div>`;
 }
 
@@ -791,7 +798,7 @@ function tariffForm(row) {
       <div><label>Цена</label><input name="price" value="${esc(row ? String(row.price) : "0.00")}" /></div>
       <div><label>Визитов</label><input name="visit_limit" value="${esc(row?.visit_limit ?? "")}" /></div>
       <div><label>Дней</label><input name="duration_days" value="${esc(row ? String(row.duration_days) : "30")}" /></div>
-      ${formBtns()}
+      ${formBtns(!!row)}
     </div>`;
 }
 
@@ -815,7 +822,7 @@ function laneForm(row) {
       <div><label>Длина, м</label><select name="length_m"><option value="25"${length === 25 ? " selected" : ""}>25</option><option value="50"${length === 50 ? " selected" : ""}>50</option></select></div>
       <div><label>Глубина, м</label><input name="depth_m" value="${esc(row ? Number(row.depth_m).toFixed(2) : "1.80")}" /></div>
       ${row ? `<div><label>Статус</label><select name="status">${dictOptions(LANE_STATUS, row.status)}</select></div>` : ""}
-      ${formBtns()}
+      ${formBtns(!!row)}
     </div>`;
 }
 
@@ -848,7 +855,7 @@ function groupForm(row, members = []) {
       <div><label>Конец</label><input name="end_date" type="date" value="${row ? isoDate(row.end_date) : today()}" /></div>
       ${row ? `<div><label>Статус</label><select name="status">${dictOptions(GROUP_STATUS, row.status)}</select></div>` : ""}
       ${roster}
-      ${formBtns()}
+      ${formBtns(!!row)}
     </div>`;
 }
 
@@ -895,7 +902,7 @@ function permitForm(data, row) {
       <div><label>Формат</label><select name="work_format_id">${dictOptions(formats, row?.work_format_id)}</select></div>
       <div><label>Выдан</label><input name="issued_on" type="date" value="${row ? isoDate(row.issued_on) : today()}" /></div>
       <div><label>До</label><input name="expires_on" type="date" value="${row && row.expires_on ? isoDate(row.expires_on) : ""}" /></div>
-      ${formBtns()}
+      ${formBtns(!!row)}
     </div>`;
 }
 
@@ -1055,6 +1062,38 @@ function fields() {
   });
   return data;
 }
+async function removeRow() {
+  if (saving || form == null || form === "new") return;
+  if (!window.confirm("Удалить запись?")) return;
+  saving = true;
+  try {
+    const path = {
+      services: `/services/${form}`,
+      payments: `/payments/${form}`,
+      sessions: `/sessions/${form}`,
+      enrollments: `/enrollments/${form}`,
+      standards: `/standards/${form}`,
+      permits: `/permits/${form}`,
+      tariffs: `/tariffs/${form}`,
+      lanes: `/lanes/${form}`,
+      groups: `/groups/${form}`,
+    }[page];
+    if (!path) throw new Error("удаление здесь недоступно");
+    await api(path, { method: "DELETE" });
+    drop(page);
+    if (page === "sessions") drop("enrollments");
+    if (page === "services") { drop("payments"); drop("enrollments"); }
+    if (page === "tariffs") drop("services");
+    if (page === "groups") drop("services");
+    form = null;
+    render();
+  } catch (error) {
+    report(error);
+  } finally {
+    saving = false;
+  }
+}
+
 async function save() {
   if (saving) return;
   saving = true;
@@ -1306,6 +1345,7 @@ document.getElementById("app").addEventListener("click", async (event) => {
   if (event.target.closest("[data-form=new]")) { form = "new"; render(); return; }
   if (event.target.closest("[data-form=off]")) { form = null; bookID = 0; render(); return; }
   if (event.target.closest("[data-act=save]")) { event.preventDefault(); save(); return; }
+  if (event.target.closest("[data-act=remove]")) { event.preventDefault(); removeRow(); return; }
 
   const act = event.target.closest("[data-act]");
   if (!act) return;

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -144,6 +145,21 @@ func (r *Repository) UpdateStatus(ctx context.Context, id int, status string) er
 	tag, err := r.db.Exec(ctx, sqlQuery, status, id)
 	if err != nil {
 		return fmt.Errorf("update group status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) Delete(ctx context.Context, id int) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM training_groups WHERE id = $1`, id)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return ErrInUse
+		}
+		return fmt.Errorf("delete group: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

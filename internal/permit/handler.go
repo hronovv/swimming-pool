@@ -17,6 +17,7 @@ type PermitService interface {
 	GetAll(ctx context.Context, filter Filter) ([]Permit, error)
 	Create(ctx context.Context, item Permit) (Permit, error)
 	Update(ctx context.Context, trainerID, workFormatID int, item Permit) error
+	Delete(ctx context.Context, trainerID, workFormatID int) error
 	TrainerIDByUser(ctx context.Context, userID int) (int, error)
 }
 
@@ -32,6 +33,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	r.GET("/permits/", h.GetAll)
 	r.POST("/permits/", h.Create)
 	r.PUT("/permits/:trainer_id/:work_format_id", h.Update)
+	r.DELETE("/permits/:trainer_id/:work_format_id", h.Delete)
 }
 
 type PermitRequest struct {
@@ -108,6 +110,22 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	if err := h.service.Update(c.Request.Context(), trainerID, formatID, item); err != nil {
+		writePermitError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) Delete(c *gin.Context) {
+	trainerID, ok := parseID(c, "trainer_id")
+	if !ok {
+		return
+	}
+	formatID, ok := parseID(c, "work_format_id")
+	if !ok {
+		return
+	}
+	if err := h.service.Delete(c.Request.Context(), trainerID, formatID); err != nil {
 		writePermitError(c, err)
 		return
 	}

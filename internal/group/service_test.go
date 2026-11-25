@@ -23,6 +23,7 @@ func (s *stubRepo) Create(_ context.Context, group Group) (Group, error) {
 }
 func (s *stubRepo) Update(context.Context, Group) error             { return nil }
 func (s *stubRepo) UpdateStatus(context.Context, int, string) error { return nil }
+func (s *stubRepo) Delete(context.Context, int) error               { return nil }
 
 func sampleDates() (time.Time, time.Time) {
 	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)

@@ -20,6 +20,7 @@ func (s *stubRepo) Create(_ context.Context, item Standard) (Standard, error) {
 	return item, nil
 }
 func (s *stubRepo) Update(context.Context, Standard) error { return nil }
+func (s *stubRepo) Delete(context.Context, int) error      { return nil }
 
 func TestCreateDefaultsAttempt(t *testing.T) {
 	svc := NewService(&stubRepo{})

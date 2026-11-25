@@ -14,6 +14,7 @@ type SessionRepository interface {
 	Create(ctx context.Context, session Session) (Session, error)
 	Update(ctx context.Context, session Session) error
 	UpdateHeld(ctx context.Context, id int, wasHeld bool) error
+	Delete(ctx context.Context, id int) error
 }
 
 type Service struct {
@@ -65,6 +66,13 @@ func (s *Service) UpdateHeld(ctx context.Context, id int, wasHeld bool) error {
 		return fmt.Errorf("%w: id is required", ErrInvalid)
 	}
 	return s.repo.UpdateHeld(ctx, id, wasHeld)
+}
+
+func (s *Service) Delete(ctx context.Context, id int) error {
+	if id <= 0 {
+		return fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.Delete(ctx, id)
 }
 
 func prepareSession(session Session) (Session, error) {

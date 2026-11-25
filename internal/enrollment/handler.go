@@ -15,6 +15,7 @@ type EnrollmentService interface {
 	GetAll(ctx context.Context, filter Filter) ([]Enrollment, error)
 	Create(ctx context.Context, item Enrollment) (Enrollment, error)
 	UpdateAttended(ctx context.Context, serviceID, sessionID int, attended bool) error
+	Delete(ctx context.Context, serviceID, sessionID int) error
 }
 
 type Handler struct {
@@ -31,6 +32,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 		enrollments.GET("/", h.GetAll)
 		enrollments.POST("/", h.Create)
 		enrollments.PATCH("/:service_id/:session_id", h.UpdateAttended)
+		enrollments.DELETE("/:service_id/:session_id", h.Delete)
 	}
 }
 
@@ -121,6 +123,22 @@ func (h *Handler) UpdateAttended(c *gin.Context) {
 		return
 	}
 	if err := h.service.UpdateAttended(c.Request.Context(), serviceID, sessionID, *req.Attended); err != nil {
+		writeEnrollmentError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) Delete(c *gin.Context) {
+	serviceID, ok := pathID(c, "service_id")
+	if !ok {
+		return
+	}
+	sessionID, ok := pathID(c, "session_id")
+	if !ok {
+		return
+	}
+	if err := h.service.Delete(c.Request.Context(), serviceID, sessionID); err != nil {
 		writeEnrollmentError(c, err)
 		return
 	}

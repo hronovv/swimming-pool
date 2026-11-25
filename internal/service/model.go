@@ -22,6 +22,7 @@ var (
 	ErrClientNotFound = errors.New("client not found")
 	ErrTariffNotFound = errors.New("tariff not found")
 	ErrGroupNotFound  = errors.New("group not found")
+	ErrInUse          = errors.New("service is still in use")
 	allowedStatuses   = map[string]struct{}{
 		StatusActive: {}, StatusFrozen: {}, StatusClosed: {},
 	}

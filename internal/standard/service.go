@@ -12,6 +12,7 @@ type StandardRepository interface {
 	GetByID(ctx context.Context, ID int) (Standard, error)
 	Create(ctx context.Context, item Standard) (Standard, error)
 	Update(ctx context.Context, item Standard) error
+	Delete(ctx context.Context, id int) error
 	ClientIDByUser(ctx context.Context, userID int) (int, error)
 	TrainerIDByUser(ctx context.Context, userID int) (int, error)
 }
@@ -70,6 +71,13 @@ func (s *Service) Update(ctx context.Context, item Standard) error {
 	}
 	prepared.ID = item.ID
 	return s.repo.Update(ctx, prepared)
+}
+
+func (s *Service) Delete(ctx context.Context, id int) error {
+	if id <= 0 {
+		return fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.Delete(ctx, id)
 }
 
 func prepareStandard(item Standard) (Standard, error) {

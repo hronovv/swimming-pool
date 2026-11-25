@@ -18,6 +18,7 @@ type StandardService interface {
 	ClientIDByUser(ctx context.Context, userID int) (int, error)
 	Create(ctx context.Context, item Standard) (Standard, error)
 	Update(ctx context.Context, item Standard) error
+	Delete(ctx context.Context, id int) error
 	TrainerIDByUser(ctx context.Context, userID int) (int, error)
 }
 
@@ -36,6 +37,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 		standards.POST("/", h.Create)
 		standards.GET("/:id", h.GetByID)
 		standards.PUT("/:id", h.Update)
+		standards.DELETE("/:id", h.Delete)
 	}
 }
 
@@ -177,6 +179,18 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	if err := h.service.Update(c.Request.Context(), item); err != nil {
+		writeStandardError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) Delete(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.service.Delete(c.Request.Context(), id); err != nil {
 		writeStandardError(c, err)
 		return
 	}

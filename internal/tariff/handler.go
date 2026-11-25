@@ -14,6 +14,7 @@ type TariffService interface {
 	GetByID(ctx context.Context, ID int) (Tariff, error)
 	Create(ctx context.Context, tariff Tariff) (Tariff, error)
 	Update(ctx context.Context, tariff Tariff) error
+	Delete(ctx context.Context, id int) error
 }
 
 type Handler struct {
@@ -33,6 +34,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 		tariffs.POST("/", h.Create)
 		tariffs.GET("/:id", h.GetByID)
 		tariffs.PUT("/:id", h.Update)
+		tariffs.DELETE("/:id", h.Delete)
 	}
 }
 
@@ -124,6 +126,18 @@ func (h *Handler) Update(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *Handler) Delete(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	if err := h.service.Delete(c.Request.Context(), id); err != nil {
+		writeTariffError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func parseID(c *gin.Context) (int, bool) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -168,6 +182,8 @@ func writeTariffError(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "tariff not found"})
 	case errors.Is(err, ErrConflict):
 		c.JSON(http.StatusConflict, gin.H{"error": "tariff already exists"})
+	case errors.Is(err, ErrInUse):
+		c.JSON(http.StatusConflict, gin.H{"error": "tariff is still in use"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}

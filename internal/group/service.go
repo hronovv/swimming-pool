@@ -14,6 +14,7 @@ type GroupRepository interface {
 	Create(ctx context.Context, group Group) (Group, error)
 	Update(ctx context.Context, group Group) error
 	UpdateStatus(ctx context.Context, id int, status string) error
+	Delete(ctx context.Context, id int) error
 }
 
 type Service struct {
@@ -78,6 +79,13 @@ func (s *Service) UpdateStatus(ctx context.Context, id int, status string) error
 		return err
 	}
 	return s.repo.UpdateStatus(ctx, id, status)
+}
+
+func (s *Service) Delete(ctx context.Context, id int) error {
+	if id <= 0 {
+		return fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.Delete(ctx, id)
 }
 
 func prepareGroup(group Group) (Group, error) {

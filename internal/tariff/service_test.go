@@ -20,6 +20,7 @@ func (s *stubRepo) Create(_ context.Context, tariff Tariff) (Tariff, error) {
 	return tariff, nil
 }
 func (s *stubRepo) Update(context.Context, Tariff) error { return nil }
+func (s *stubRepo) Delete(context.Context, int) error    { return nil }
 
 func TestCreateSetsWorkFormatAndTrimsName(t *testing.T) {
 	repo := &stubRepo{}

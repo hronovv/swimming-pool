@@ -12,6 +12,7 @@ type TariffRepository interface {
 	GetByID(ctx context.Context, ID int) (Tariff, error)
 	Create(ctx context.Context, tariff Tariff) (Tariff, error)
 	Update(ctx context.Context, tariff Tariff) error
+	Delete(ctx context.Context, id int) error
 }
 
 type Service struct {
@@ -53,6 +54,13 @@ func (s *Service) Update(ctx context.Context, tariff Tariff) error {
 	}
 	prepared.ID = tariff.ID
 	return s.repo.Update(ctx, prepared)
+}
+
+func (s *Service) Delete(ctx context.Context, id int) error {
+	if id <= 0 {
+		return fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.Delete(ctx, id)
 }
 
 func prepareTariff(tariff Tariff) (Tariff, error) {

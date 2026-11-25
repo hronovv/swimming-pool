@@ -12,6 +12,7 @@ type EnrollmentRepository interface {
 	GetAll(ctx context.Context, filter Filter) ([]Enrollment, error)
 	Create(ctx context.Context, item Enrollment) (Enrollment, error)
 	UpdateAttended(ctx context.Context, serviceID, sessionID int, attended bool) error
+	Delete(ctx context.Context, serviceID, sessionID int) error
 	ServiceLink(ctx context.Context, serviceID int) (Link, error)
 	SessionLink(ctx context.Context, sessionID int) (Link, error)
 }
@@ -47,6 +48,13 @@ func (s *Service) UpdateAttended(ctx context.Context, serviceID, sessionID int, 
 		return fmt.Errorf("%w: service_id and session_id are required", ErrInvalid)
 	}
 	return s.repo.UpdateAttended(ctx, serviceID, sessionID, attended)
+}
+
+func (s *Service) Delete(ctx context.Context, serviceID, sessionID int) error {
+	if serviceID <= 0 || sessionID <= 0 {
+		return fmt.Errorf("%w: service_id and session_id are required", ErrInvalid)
+	}
+	return s.repo.Delete(ctx, serviceID, sessionID)
 }
 
 func (s *Service) matchLinks(ctx context.Context, item Enrollment) error {

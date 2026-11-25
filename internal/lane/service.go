@@ -13,6 +13,7 @@ type LaneRepository interface {
 	Create(ctx context.Context, lane Lane) (Lane, error)
 	Update(ctx context.Context, lane Lane) error
 	UpdateStatus(ctx context.Context, id int, status string) error
+	Delete(ctx context.Context, id int) error
 }
 
 type Service struct {
@@ -66,6 +67,13 @@ func (s *Service) UpdateStatus(ctx context.Context, id int, status string) error
 		return err
 	}
 	return s.repo.UpdateStatus(ctx, id, status)
+}
+
+func (s *Service) Delete(ctx context.Context, id int) error {
+	if id <= 0 {
+		return fmt.Errorf("%w: id is required", ErrInvalid)
+	}
+	return s.repo.Delete(ctx, id)
 }
 
 func validateLane(lane Lane) error {

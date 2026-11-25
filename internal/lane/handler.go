@@ -15,6 +15,7 @@ type LaneService interface {
 	Create(ctx context.Context, lane Lane) (Lane, error)
 	Update(ctx context.Context, lane Lane) error
 	UpdateStatus(ctx context.Context, id int, status string) error
+	Delete(ctx context.Context, id int) error
 }
 
 type Handler struct {
@@ -35,6 +36,7 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 		lanes.GET("/:id", h.GetByID)
 		lanes.PUT("/:id", h.Update)
 		lanes.PATCH("/:id/status", h.UpdateStatus)
+		lanes.DELETE("/:id", h.Delete)
 	}
 }
 
@@ -152,6 +154,18 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) Delete(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	if err := h.service.Delete(c.Request.Context(), id); err != nil {
+		writeLaneError(c, err)
+		return
+	}
 	c.Status(http.StatusNoContent)
 }
 

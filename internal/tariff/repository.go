@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -134,6 +135,18 @@ func (r *Repository) Update(ctx context.Context, tariff Tariff) error {
 	return nil
 }
 
+func (r *Repository) Delete(ctx context.Context, id int) error {
+	tag, err := r.db.Exec(ctx, `DELETE FROM tariffs WHERE id = $1`, id)
+	if err != nil {
+		return mapRepoErr(err, "delete tariff")
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	_ = r.RefreshStats(ctx)
+	return nil
+}
+
 func (r *Repository) RefreshStats(ctx context.Context) error {
 	_, err := r.db.Exec(ctx, `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_tariff_stats`)
 	return err
@@ -141,8 +154,15 @@ func (r *Repository) RefreshStats(ctx context.Context) error {
 
 func mapRepoErr(err error, op string) error {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		return ErrConflict
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "23505":
+			return ErrConflict
+		case "23503":
+			if strings.HasPrefix(op, "delete") {
+				return ErrInUse
+			}
+		}
 	}
 	return fmt.Errorf("%s: %w", op, err)
 }
